@@ -1,0 +1,11 @@
+/**:
+  ros__parameters:
+    source: replay
+    recording: /recordings/capture.nvr
+    frame_id: nuvo_front_left_rectified_optical
+    timestamp_mode: replay_rebased
+    replay_rate: 1.0
+    replay_loop: false
+    publish_clock: false
+    publish_points: false
+    allow_provisional_calibration: false

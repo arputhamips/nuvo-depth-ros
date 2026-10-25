@@ -1,0 +1,15 @@
+/**:
+  ros__parameters:
+    source: local
+    endpoint: /run/nuvo-depth/data.sock
+    frame_id: nuvo_front_left_rectified_optical
+    timestamp_mode: local_boottime
+    cadence_hz: 10.0
+    delivery: best_effort
+    allow_provisional_calibration: false
+    publish_points: false
+    lazy: true
+    point_stride: 2
+    qos_depth: 1
+    reliability: best_effort
+    maximum_frame_age_s: 1.0

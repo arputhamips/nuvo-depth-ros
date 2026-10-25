@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "upstream_repository": "https://github.com/arputhamips/nuvo-depth",
+  "upstream_base_commit": "2165aeeeacc1524b31d945753e29018d8a1cd148",
+  "sdk_version": "0.1.0",
+  "files": {
+    "CMakeLists.txt": {
+      "upstream_path": "sdk/cpp/CMakeLists.txt",
+      "sha256": "c0e64b9746df3b9ec207cdf772273d5045dfcdd831e536e5c2cf804107afab6c"
+    },
+    "LICENSE": {
+      "upstream_path": "LICENSE",
+      "sha256": "3972dc9744f6499f0f9b2dbf76696f2ae7ad8af9b23dde66d6af86c9dfb36986"
+    },
+    "NOTICE": {
+      "upstream_path": "NOTICE",
+      "sha256": "9fd1aa10add6263dac3e5be372a513be0f82476362df0b499a4410eff4c135b9"
+    },
+    "README.md": {
+      "upstream_path": "sdk/cpp/README.md",
+      "sha256": "734300adadcdc554fcf1fd4d67ef42a3cf434c7e675edb1bf5397baf2343f18d"
+    },
+    "cmake/nuvo_depth_clientConfig.cmake.in": {
+      "upstream_path": "sdk/cpp/cmake/nuvo_depth_clientConfig.cmake.in",
+      "sha256": "1cc002a67aab46d89664ba7a721b73af4ddb94b0ab5f5096e849305a69f3f70c"
+    },
+    "include/nuvo/client.hpp": {
+      "upstream_path": "sdk/cpp/include/nuvo/client.hpp",
+      "sha256": "aa54888b50bbfe08e111804f8a027e5f0781759e761651e0c48618acb58ec68d"
+    },
+    "private/depthd/wire_protocol.hpp": {
+      "upstream_path": "include/depthd/wire_protocol.hpp",
+      "sha256": "65770677ab75b2e3e356c5aac80f16b2a98322050f8bb4b2436cdd2634ea38e5"
+    },
+    "src/frame.cpp": {
+      "upstream_path": "sdk/cpp/src/frame.cpp",
+      "sha256": "9c0180ede08c9ea903c05c3b2f90a0e9cc2d681ff871d575749f52e9a41c2670"
+    },
+    "src/https.cpp": {
+      "upstream_path": "sdk/cpp/src/https.cpp",
+      "sha256": "28c7e1e5f78a2a0d37549876a5b40afe90efaee4230dfd68cd74fa9c296ae869"
+    },
+    "src/https_disabled.cpp": {
+      "upstream_path": "sdk/cpp/src/https_disabled.cpp",
+      "sha256": "62a4e53fd113d024b0cd64ebf91de86b68844972d2309337195ba0a8c16139bb"
+    },
+    "src/local.cpp": {
+      "upstream_path": "sdk/cpp/src/local.cpp",
+      "sha256": "73b5877e7844aa0503e7bf958e883e0279d814eb986755546401da3179849ec5"
+    },
+    "src/replay.cpp": {
+      "upstream_path": "sdk/cpp/src/replay.cpp",
+      "sha256": "2751bfe90f359e7f6dea99dabf21d72309604a98a389c1d0a05c19c09edbdb8e"
+    },
+    "src/wire_protocol.cpp": {
+      "upstream_path": "src/wire_protocol.cpp",
+      "sha256": "f3edf4dcdb1b10253d012514a9df51f95686ab01eef17f13f7da720f21b595ce"
+    },
+    "tests/client_test.cpp": {
+      "upstream_path": "sdk/cpp/tests/client_test.cpp",
+      "sha256": "8e6b83a8442b6c94e1375bc4759e8b0168bb8f58ce36d5b368887bcc1a0f3d28"
+    },
+    "tests/installed.py": {
+      "upstream_path": "sdk/cpp/tests/installed.py",
+      "sha256": "81534d6e26d152b8deb46833f17dacb68ee64b95f93652d50a3292fb788d75ae"
+    },
+    "tests/transports.py": {
+      "upstream_path": "sdk/cpp/tests/transports.py",
+      "sha256": "2c7a1a004c80daa67cc64e3f8b36e7d156d2c47f857335083b3b8c50e9202058"
+    }
+  },
+  "source_normalization": "Declared text closure exported with LF line endings",
+  "source_state": "content-addressed working tree; base commit is not an assertion that exported changes are committed",
+  "content_sha256": "12b8177c746bd70e39a583faf386ff3316d6dcaaff774de5cd8e252ede5b4cb6"
+}

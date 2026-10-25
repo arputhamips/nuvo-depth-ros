@@ -1,0 +1,44 @@
+name: ROS and client contracts
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  jazzy:
+    runs-on: ubuntu-24.04
+    container: ros:jazzy-ros-base
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - name: Install declared development dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3-colcon-common-extensions nlohmann-json3-dev libboost-system-dev libssl-dev libc-ares-dev openssl ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest ros-jazzy-rmw-cyclonedds-cpp
+      - name: Verify immutable SDK and independent public client
+        run: |
+          python3 tools/refresh_sdk.py --check
+          cmake -S nuvo_depth_client_vendor/upstream -B output/client -G Ninja -DNUVO_CLIENT_BUILD_TESTS=ON
+          cmake --build output/client -j2
+          ctest --test-dir output/client --output-on-failure
+      - name: Build and test ROS component and DDS acquisition
+        shell: bash
+        run: |
+          source /opt/ros/jazzy/setup.bash
+          colcon build --executor sequential --cmake-args -DCMAKE_BUILD_TYPE=Release
+          colcon test --return-code-on-test-failure
+          colcon test-result --verbose
+          source install/setup.bash
+          RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/integration.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: jazzy-contract-results
+          path: |
+            log/
+            build/*/test_results/
+            output/client/Testing/
+            nuvo_depth_client_vendor/upstream/SOURCE-MANIFEST.json
+          if-no-files-found: error

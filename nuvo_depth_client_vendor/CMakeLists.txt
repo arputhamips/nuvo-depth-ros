@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.25)
+project(nuvo_depth_client_vendor)
+find_package(ament_cmake REQUIRED)
+option(NUVO_CLIENT_WITH_HTTPS "Include remote HTTPS acquisition" ON)
+set(NUVO_CLIENT_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+add_subdirectory(upstream)
+ament_export_dependencies(nuvo_depth_client)
+ament_package()

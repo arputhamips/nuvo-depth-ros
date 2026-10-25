@@ -1,0 +1,11 @@
+build/
+install/
+log/
+output/
+__pycache__/
+*.pyc
+.env
+*.nvr
+*.nuv
+*.pem
+credentials/

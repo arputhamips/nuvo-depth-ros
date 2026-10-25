@@ -1,0 +1,20 @@
+services:
+  camera:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    network_mode: host
+    # Shared DDS SHM namespace for local ROS containers. This is independent
+    # of Nuvo memfd transport, which uses SCM_RIGHTS through the mounted socket.
+    ipc: host
+    group_add:
+      - "${NUVO_VIDEO_GID:?Set NUVO_VIDEO_GID from getent group nuvo-video on the Pi}"
+    volumes:
+      - /run/nuvo-depth:/run/nuvo-depth:ro
+      - ../nuvo_bringup/config:/config:ro
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+    command: ["ros2", "launch", "nuvo_bringup", "camera.launch.py", "config:=/config/camera.yaml"]
+    init: true
+    restart: unless-stopped

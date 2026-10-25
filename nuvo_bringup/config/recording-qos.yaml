@@ -1,0 +1,12 @@
+/nuvo/front/depth/image_rect:
+  reliability: best_effort
+  history: keep_last
+  depth: 5
+/nuvo/front/depth/validity:
+  reliability: best_effort
+  history: keep_last
+  depth: 5
+/nuvo/front/depth/camera_info:
+  reliability: best_effort
+  history: keep_last
+  depth: 5
