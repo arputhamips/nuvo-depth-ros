@@ -77,6 +77,7 @@ class Source {
   virtual ~Source() = default;
   // One acquisition thread. cancel() may be called concurrently and interrupts
   // blocking I/O. A cancelled Source is terminal; construct a new one to retry.
+  // A next() exception also makes the source terminal; later calls return empty.
   [[nodiscard]] virtual std::optional<Frame> next() = 0;
   virtual void cancel() noexcept = 0;
   [[nodiscard]] virtual bool finished() const noexcept { return false; }

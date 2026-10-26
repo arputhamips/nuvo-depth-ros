@@ -1,5 +1,6 @@
 /**:
   ros__parameters:
+    # Same-Pi shared memory via AF_UNIX + memfd; the Nuvo gateway is not used.
     source: local
     endpoint: /run/nuvo-depth/data.sock
     frame_id: nuvo_front_left_rectified_optical

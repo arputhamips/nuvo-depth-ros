@@ -107,13 +107,24 @@ class Local final : public Source {
   }
   std::optional<Frame> next() override {
     if (stopped_) return {};
+    try {
+      return acquire();
+    } catch (...) {
+      // Never issue another request after a partial response or invalid frame.
+      cancel();
+      throw;
+    }
+  }
+
+ private:
+  std::optional<Frame> acquire() {
     std::array<std::byte, 48> request{};
     std::memcpy(request.data(), "NVW2", 4);
     put(request.data() + 4, products_, 4);
     put(request.data() + 8, 400, 4);
     std::memcpy(request.data() + 16, cursor_.data(), 32);
     send(request);
-    std::shared_ptr<Fd> handle;
+    std::unique_ptr<Fd> handle;
     auto response = receive(&handle);
     if (stopped_) return {};
     if (response.size() == 4 && std::memcmp(response.data(), "NVN2", 4) == 0 &&
@@ -143,8 +154,11 @@ class Local final : public Source {
         ::mmap(nullptr, size, PROT_READ, MAP_SHARED, handle->value, 0);
     if (mapped == MAP_FAILED)
       throw std::runtime_error("local frame mmap failed");
+    // mmap keeps the storage alive after the descriptor closes. Retained
+    // frames therefore consume mappings, not one process descriptor each.
+    handle.reset();
     auto owner =
-        std::shared_ptr<const void>(mapped, [size, handle](const void* p) {
+        std::shared_ptr<const void>(mapped, [size](const void* p) {
           ::munmap(const_cast<void*>(p), size);
         });
     auto frame = decode_frame(
@@ -165,13 +179,12 @@ class Local final : public Source {
     return frame;
   }
 
- private:
   void send(std::span<const std::byte> bytes) {
     if (::send(socket_->value, bytes.data(), bytes.size(), MSG_NOSIGNAL) !=
         static_cast<ssize_t>(bytes.size()))
       throw std::runtime_error("local send failed or cancelled");
   }
-  std::vector<std::byte> receive(std::shared_ptr<Fd>* output = nullptr) {
+  std::vector<std::byte> receive(std::unique_ptr<Fd>* output = nullptr) {
     pollfd descriptor{socket_->value, POLLIN, 0};
     int ready;
     const auto deadline =
@@ -196,21 +209,21 @@ class Local final : public Source {
     message.msg_control = ancillary.data();
     message.msg_controllen = ancillary.size();
     const auto count = ::recvmsg(socket_->value, &message, MSG_CMSG_CLOEXEC);
-    std::vector<std::shared_ptr<Fd>> handles;
+    std::vector<std::unique_ptr<Fd>> handles;
     for (auto* c = CMSG_FIRSTHDR(&message); c; c = CMSG_NXTHDR(&message, c)) {
       if (c->cmsg_level == SOL_SOCKET && c->cmsg_type == SCM_RIGHTS &&
           c->cmsg_len >= CMSG_LEN(0)) {
         const auto number = (c->cmsg_len - CMSG_LEN(0)) / sizeof(int);
         auto* fds = reinterpret_cast<int*>(CMSG_DATA(c));
         for (std::size_t i = 0; i < number; ++i)
-          handles.push_back(std::make_shared<Fd>(fds[i]));
+          handles.push_back(std::make_unique<Fd>(fds[i]));
       }
     }
     if (count <= 0 || (message.msg_flags & (MSG_TRUNC | MSG_CTRUNC)) ||
         handles.size() > (output ? 1U : 0U))
       throw std::runtime_error(
           "local connection closed or malformed ancillary response");
-    if (output && !handles.empty()) *output = handles.front();
+    if (output && !handles.empty()) *output = std::move(handles.front());
     if (count >= 4 && std::memcmp(payload.data(), "NVE2", 4) == 0)
       throw std::runtime_error("Nuvo local server rejected request");
     return {payload.begin(), payload.begin() + count};

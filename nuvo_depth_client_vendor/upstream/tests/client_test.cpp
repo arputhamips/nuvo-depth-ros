@@ -1,7 +1,9 @@
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <nuvo/client.hpp>
 #include <stdexcept>
 #include <thread>
@@ -10,6 +12,26 @@
 
 #include <csignal>
 #endif
+namespace {
+#if defined(__linux__)
+std::size_t open_descriptors() {
+  return static_cast<std::size_t>(std::distance(
+      std::filesystem::directory_iterator("/proc/self/fd"),
+      std::filesystem::directory_iterator{}));
+}
+#endif
+bool terminal_after_error(nuvo::client::Source& source) {
+  bool rejected = false;
+  try {
+    (void)source.next();
+  } catch (const std::exception&) {
+    rejected = true;
+  }
+  if (!rejected || source.finished()) return false;
+  // An invalid source must neither retry I/O nor disguise failure as clean EOF.
+  return !source.next() && !source.next() && !source.finished();
+}
+}  // namespace
 int main(int argc, char** argv) {
   using namespace nuvo::client;
   try {
@@ -33,9 +55,14 @@ int main(int argc, char** argv) {
     }
     const std::string mode = argv[1];
     std::unique_ptr<Source> source;
-    if (mode == "local" || mode == "cancel-local" || mode == "interrupt-local")
+#if defined(__linux__)
+    const auto descriptors_before = open_descriptors();
+#endif
+    if (mode == "local" || mode == "cancel-local" || mode == "interrupt-local" ||
+        mode == "terminal-local")
       source = local_source(argv[2]);
-    else if (mode == "https" || mode == "cancel-https") {
+    else if (mode == "https" || mode == "cancel-https" ||
+             mode == "terminal-https") {
       HttpsOptions options;
       options.url = argv[2];
       options.ca_file = argv[3];
@@ -43,7 +70,8 @@ int main(int argc, char** argv) {
       if (argc > 5) options.connect_address = argv[5];
       options.timeout = std::chrono::milliseconds(1500);
       source = https_source(options);
-    } else if (mode == "replay")
+    } else if (mode == "replay" || mode == "terminal-replay" ||
+               mode == "eof-replay")
       source = replay_source(argv[2]);
     else if (mode == "decode" || mode == "override") {
       std::ifstream input(argv[2], std::ios::binary);
@@ -63,6 +91,17 @@ int main(int argc, char** argv) {
       return 0;
     } else
       return 1;
+    if (mode.starts_with("terminal-"))
+      return terminal_after_error(*source) ? 0 : 1;
+    if (mode == "eof-replay") {
+      unsigned count{};
+      while (!source->finished()) {
+        if (source->next()) ++count;
+      }
+      if (source->next() || !source->finished()) return 1;
+      std::cout << count << '\n';
+      return 0;
+    }
 #if defined(__linux__)
     if (mode == "interrupt-local") {
       struct sigaction action {
@@ -98,12 +137,16 @@ int main(int argc, char** argv) {
         (void)source->next();
       } catch (const std::exception&) {
       }
-      return std::chrono::steady_clock::now() - start < std::chrono::seconds(2)
+      cancel.join();
+      return !source->next() &&
+                     std::chrono::steady_clock::now() - start <
+                         std::chrono::seconds(2)
                  ? 0
                  : 1;
     }
     unsigned count{};
-    std::optional<Frame> retained;
+    std::vector<Frame> retained;
+    std::vector<std::byte> first_wire;
     while (count < 2) {
       auto frame = source->next();
       if (!frame) {
@@ -113,16 +156,28 @@ int main(int argc, char** argv) {
       if (!frame->matching_geometry || !frame->find("depth") ||
           !frame->find("validity"))
         throw std::runtime_error("fixture products or geometry absent");
-      if (!retained) retained = *frame;
+      if (retained.empty())
+        first_wire.assign(frame->wire_bytes.begin(), frame->wire_bytes.end());
+      retained.push_back(*frame);
       std::cout << frame->identity.capture_sequence << '\n';
       ++count;
     }
-    source.reset();  // Frame views must survive source and mapping teardown.
+    source->cancel();
+    source.reset();  // Both frames survive subsequent acquisition and teardown.
+#if defined(__linux__)
+    if (mode == "local" && open_descriptors() != descriptors_before)
+      throw std::runtime_error("retained mapped frame kept an unnecessary fd");
+#endif
     const auto expected =
         mode == "replay" && argc > 3 ? std::stof(argv[3]) : 2.0F;
-    if (count == 0 || !retained ||
-        float32_le(retained->find("depth")->bytes.data()) != expected)
+    if (count == 0 || retained.empty() ||
+        ((mode == "local" || mode == "https") && count != 2) ||
+        !std::equal(first_wire.begin(), first_wire.end(),
+                    retained.front().wire_bytes.begin(),
+                    retained.front().wire_bytes.end()))
       return 1;
+    for (const auto& frame : retained)
+      if (float32_le(frame.find("depth")->bytes.data()) != expected) return 1;
     return 0;
   } catch (const std::exception& e) {
     std::cerr << e.what() << '\n';

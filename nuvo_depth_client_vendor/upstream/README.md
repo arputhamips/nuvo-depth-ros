@@ -39,12 +39,15 @@ while (!stop_requested) {
 ```
 
 `next()` returns no frame on a bounded IPC wait. Check `finished()` for replay
-EOF. Transport errors and malformed input throw. `cancel()` is concurrent-safe,
-interrupts reads, and makes that source terminal. Retry by constructing a new
+EOF. Transport errors and malformed input throw and make the source terminal.
+`cancel()` is concurrent-safe, interrupts reads, and makes that source terminal.
+Retry by constructing a new
 source; do not retry a half-read message. Local mappings are read-only sealed
 memfds; frame ownership survives source destruction. Network/replay buffers are
-bounded owning allocations. The SDK itself has no background queue or reconnect
-thread. The caller owns its recovery, rate policy and publication queue.
+bounded owning allocations. Replay reads a finite snapshot of the regular file
+at construction and rejects record lengths beyond its remaining bytes before
+allocating. The SDK itself has no background queue or reconnect thread. The
+caller owns its recovery, rate policy and publication queue.
 
 `https_source()` uses a verified CA/hostname and a restricted 0600 token file.
 It exchanges the existing admin token for a session, checks product capabilities,

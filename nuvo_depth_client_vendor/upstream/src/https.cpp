@@ -125,16 +125,25 @@ class Https final : public Source {
   }
   std::optional<Frame> next() override {
     if (stopped_) return {};
-    if (!connected_) connect();
-    beast::flat_buffer buffer(maximum_wire_bytes);
-    operation([&](auto done) {
-      ws_.async_read(buffer, [done](Error e, std::size_t) { done(e); });
-    });
-    if (!ws_.got_binary())
-      throw std::runtime_error("Nuvo stream returned a nonbinary message");
-    auto bytes = std::make_shared<std::vector<std::byte>>(buffer.size());
-    net::buffer_copy(net::buffer(*bytes), buffer.data());
-    return decode_frame(*bytes, bytes);
+    try {
+      if (!connected_) connect();
+      // flat_buffer is contiguous. Retain its allocation with the Frame rather
+      // than allocating, zeroing and copying the entire pixel payload again.
+      auto buffer = std::make_shared<beast::flat_buffer>(maximum_wire_bytes);
+      operation([&](auto done) {
+        ws_.async_read(*buffer, [done](Error e, std::size_t) { done(e); });
+      });
+      if (!ws_.got_binary())
+        throw std::runtime_error("Nuvo stream returned a nonbinary message");
+      const auto bytes = buffer->data();
+      return decode_frame(
+          {static_cast<const std::byte*>(bytes.data()), bytes.size()}, buffer);
+    } catch (...) {
+      // A partial handshake/read cannot be retried on this stream.
+      stopped_ = true;
+      close_sockets();
+      throw;
+    }
   }
 
  private:

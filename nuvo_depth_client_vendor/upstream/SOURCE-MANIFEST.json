@@ -18,7 +18,7 @@
     },
     "README.md": {
       "upstream_path": "sdk/cpp/README.md",
-      "sha256": "734300adadcdc554fcf1fd4d67ef42a3cf434c7e675edb1bf5397baf2343f18d"
+      "sha256": "4239501c0ba6e94fe7fabc136425253efe1ee54089bfd0371e5112e1d45051a3"
     },
     "cmake/nuvo_depth_clientConfig.cmake.in": {
       "upstream_path": "sdk/cpp/cmake/nuvo_depth_clientConfig.cmake.in",
@@ -26,7 +26,7 @@
     },
     "include/nuvo/client.hpp": {
       "upstream_path": "sdk/cpp/include/nuvo/client.hpp",
-      "sha256": "aa54888b50bbfe08e111804f8a027e5f0781759e761651e0c48618acb58ec68d"
+      "sha256": "0dff570ec17dbf7877ccfea54a119fc2919af9905b6385f73ab524f049b8b9ec"
     },
     "private/depthd/wire_protocol.hpp": {
       "upstream_path": "include/depthd/wire_protocol.hpp",
@@ -34,11 +34,11 @@
     },
     "src/frame.cpp": {
       "upstream_path": "sdk/cpp/src/frame.cpp",
-      "sha256": "9c0180ede08c9ea903c05c3b2f90a0e9cc2d681ff871d575749f52e9a41c2670"
+      "sha256": "5c87f4693d854d8bd1dc7f10b6a7e113ac89e4af8360e3631f2e50699630487d"
     },
     "src/https.cpp": {
       "upstream_path": "sdk/cpp/src/https.cpp",
-      "sha256": "28c7e1e5f78a2a0d37549876a5b40afe90efaee4230dfd68cd74fa9c296ae869"
+      "sha256": "5c9e90edd7a54fe3427d8b8d23ddb15f223578687f7b6d496e4ccc547916a590"
     },
     "src/https_disabled.cpp": {
       "upstream_path": "sdk/cpp/src/https_disabled.cpp",
@@ -46,11 +46,11 @@
     },
     "src/local.cpp": {
       "upstream_path": "sdk/cpp/src/local.cpp",
-      "sha256": "73b5877e7844aa0503e7bf958e883e0279d814eb986755546401da3179849ec5"
+      "sha256": "0f0565e046edcd3804cd84e1469597122f88829dd29cd44906d23850e48effa6"
     },
     "src/replay.cpp": {
       "upstream_path": "sdk/cpp/src/replay.cpp",
-      "sha256": "2751bfe90f359e7f6dea99dabf21d72309604a98a389c1d0a05c19c09edbdb8e"
+      "sha256": "00f5e5dcb8f173eefe6b83b186e17bde092b44c18ea594f103410bcea5ddf11c"
     },
     "src/wire_protocol.cpp": {
       "upstream_path": "src/wire_protocol.cpp",
@@ -58,7 +58,7 @@
     },
     "tests/client_test.cpp": {
       "upstream_path": "sdk/cpp/tests/client_test.cpp",
-      "sha256": "8e6b83a8442b6c94e1375bc4759e8b0168bb8f58ce36d5b368887bcc1a0f3d28"
+      "sha256": "7eab7694887ca5157cc53ae5dfaedf7679bf5363c807f5f7ad4e324caadcd848"
     },
     "tests/installed.py": {
       "upstream_path": "sdk/cpp/tests/installed.py",
@@ -66,10 +66,10 @@
     },
     "tests/transports.py": {
       "upstream_path": "sdk/cpp/tests/transports.py",
-      "sha256": "2c7a1a004c80daa67cc64e3f8b36e7d156d2c47f857335083b3b8c50e9202058"
+      "sha256": "1c2f878576b8ec5fe1c4f7a84126d85e26b324de8aadd1b1dc8c1c27cf586010"
     }
   },
   "source_normalization": "Declared text closure exported with LF line endings",
   "source_state": "content-addressed working tree; base commit is not an assertion that exported changes are committed",
-  "content_sha256": "12b8177c746bd70e39a583faf386ff3316d6dcaaff774de5cd8e252ede5b4cb6"
+  "content_sha256": "1c09096265578bbdb603bbc63e381d77633c619df80f965c79c75f45820c9de5"
 }

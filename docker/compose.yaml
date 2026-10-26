@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    # ROS DDS networking only; source: local reads host memfd frames via AF_UNIX.
+    # Nuvo's host gateway is independent and can remain masked for local-only use.
     network_mode: host
     # Shared DDS SHM namespace for local ROS containers. This is independent
     # of Nuvo memfd transport, which uses SCM_RIGHTS through the mounted socket.

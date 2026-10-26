@@ -77,7 +77,12 @@ std::array<double, N> matrix(const Json& value) {
   return result;
 }
 bool near(double a, double b) {
-  return std::abs(a - b) <= 1e-7 * std::max({1.0, std::abs(a), std::abs(b)});
+  return std::isfinite(a) && std::isfinite(b) &&
+         std::abs(a - b) <= 1e-7 * std::max({1.0, std::abs(a), std::abs(b)});
+}
+bool near_relative(double a, double b) {
+  return std::isfinite(a) && std::isfinite(b) &&
+         std::abs(a - b) <= 1e-7 * std::max(std::abs(a), std::abs(b));
 }
 struct GridMapping {
   Grid dimensions;
@@ -123,8 +128,10 @@ Geometry geometry(const Json& value, Grid dimensions) {
                 near((*p)[8], 0) && near((*p)[9], 0) && near((*p)[10], 1) &&
                 near((*p)[11], 0),
             "unsupported noncanonical rectified geometry");
-  require(near(l[3], 0) && near(l[0], r[0]) && near(l[5], r[5]) &&
-              near(l[6], r[6]) && near(-r[3] / l[0], result.baseline_m),
+  require(near(l[3], 0) && near_relative(l[0], r[0]) &&
+              near_relative(l[5], r[5]) &&
+              near(l[6], r[6]) && r[3] < 0 &&
+              near_relative(-r[3] / r[0], result.baseline_m),
           "inconsistent stereo projections");
   const auto b = result.baseline_m;
   const std::array<double, 16> q{
@@ -192,6 +199,8 @@ Frame decode_frame(std::span<const std::byte> bytes,
               descriptors.size() <= 14,
           "invalid product count");
   std::vector<std::pair<std::size_t, std::size_t>> ranges;
+  ranges.reserve(descriptors.size());
+  result.products.reserve(descriptors.size());
   std::uint64_t mask{};
   for (const auto& d : descriptors) {
     Product p;
@@ -199,9 +208,9 @@ Frame decode_frame(std::span<const std::byte> bytes,
     p.format = d.at("format").get<std::string>();
     p.grid = grid(d);
     const auto it = std::find(names.begin(), names.end(), p.kind);
-    require(it != names.end() && !result.find(p.kind),
-            "unknown or repeated product");
+    require(it != names.end(), "unknown product");
     const auto index = static_cast<unsigned>(it - names.begin());
+    require((mask & (1ULL << index)) == 0, "repeated product");
     mask |= 1ULL << index;
     const bool numeric = index == 2 || index == 3;
     const bool rgb =
@@ -269,8 +278,8 @@ Frame decode_frame(std::span<const std::byte> bytes,
     require(
         image_grid->reference_width == matching_grid->reference_width &&
             image_grid->reference_height == matching_grid->reference_height &&
-            near(result.image_geometry->baseline_m,
-                 result.matching_geometry->baseline_m),
+            near_relative(result.image_geometry->baseline_m,
+                          result.matching_geometry->baseline_m),
         "calibrated views disagree on reference grid or baseline");
     for (unsigned side = 0; side < 2; ++side) {
       auto expected = side ? result.image_geometry->right_projection

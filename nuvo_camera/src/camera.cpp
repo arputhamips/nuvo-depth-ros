@@ -1,11 +1,11 @@
 #include "nuvo_camera/camera.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <condition_variable>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <diagnostic_msgs/msg/diagnostic_status.hpp>
-#include <limits>
 #include <mutex>
 #include <nuvo_camera_msgs/msg/frame_metadata.hpp>
 #include <optional>
@@ -73,6 +73,9 @@ class NuvoCamera::Impl {
           "invalid frame, queue, cloud stride, replay rate or freshness "
           "parameters");
     nuvo::client::validate(subscription_);
+    if (source_kind_ == "https" && subscription_.cadence_hz < 1.0 / 60.0)
+      throw std::invalid_argument(
+          "HTTPS cadence_hz must be at least 1/60 Hz for its 120 s deadline");
     if (source_kind_ == "replay" && recording_.empty())
       throw std::invalid_argument("replay requires recording path");
     if (source_kind_ != "replay" &&
@@ -85,6 +88,20 @@ class NuvoCamera::Impl {
       throw std::invalid_argument(
           "replay use_sim_time requires publish_clock to define the playback "
           "timeline");
+    const auto initial_sim_time = node_.get_parameter("use_sim_time").as_bool();
+    time_parameters_ = node_.add_on_set_parameters_callback(
+        [initial_sim_time](const std::vector<rclcpp::Parameter>& parameters) {
+          rcl_interfaces::msg::SetParametersResult result;
+          result.successful = true;
+          for (const auto& parameter : parameters)
+            if (parameter.get_name() == "use_sim_time" &&
+                (parameter.get_type() != rclcpp::ParameterType::PARAMETER_BOOL ||
+                 parameter.as_bool() != initial_sim_time)) {
+              result.successful = false;
+              result.reason = "use_sim_time is fixed at acquisition startup";
+            }
+          return result;
+        });
     if (publish_clock_) mode_ = "replay_clock";
     if (source_kind_ == "local" && mode_ == "local_boottime")
       (void)nuvo::client::local_clock_sample();
@@ -169,6 +186,7 @@ class NuvoCamera::Impl {
       }
       std::shared_ptr<nuvo::client::Source> current;
       bool idle = false;
+      bool provisional_blocked = false;
       try {
         state("connecting", 1);
         current = make_source();
@@ -178,7 +196,10 @@ class NuvoCamera::Impl {
           if (stopped_) current->cancel();
         }
         while (!stopped_) {
-          if (lazy_ && !has_consumers()) {
+          if (lazy_ && !has_consumers() && source_kind_ == "replay" &&
+              !resume_replay())
+            break;
+          if (lazy_ && !has_consumers() && source_kind_ != "replay") {
             idle = true;
             current->cancel();
             break;
@@ -197,7 +218,14 @@ class NuvoCamera::Impl {
             }
             continue;
           }
-          failures = 0;
+          // Receipt mode labels arrival at the adapter, before calibration,
+          // image conversion or publication can add processing latency.
+          const auto receipt_stamp =
+              mode_ == "receipt" ? node_.now().nanoseconds() : 0;
+          if (previous_identity_ && frame->identity == *previous_identity_) {
+            ++duplicates_;
+            continue;
+          }
           if (override_ && !frame->matching_geometry)
             nuvo::client::apply_calibration_override(*frame, *override_);
           if (!frame->matching_geometry)
@@ -205,19 +233,20 @@ class NuvoCamera::Impl {
                 "source lacks matching geometry; use a matching "
                 "hash/grid-checked calibration override or compatible camera "
                 "software");
-          if (frame->calibration_authority == 0 && !allow_provisional_) {
-            state(
-                "provisional calibration: publication requires explicit "
-                "allow_provisional_calibration",
-                1);
-            continue;
+          if (source_kind_ != "replay" && frame->calibration_authority == 0 &&
+              !allow_provisional_) {
+            state("provisional calibration: publication requires explicit "
+                  "allow_provisional_calibration", 1);
+            // Release native matcher demand while publication is blocked.
+            // Probe periodically so a validated calibration can recover.
+            provisional_blocked = true;
+            current->cancel();
+            break;
           }
-          if (previous_identity_ && frame->identity == *previous_identity_) {
-            ++duplicates_;
-            continue;
+          if (publish(*frame, receipt_stamp)) {
+            failures = 0;
+            previous_identity_ = frame->identity;
           }
-          publish(*frame);
-          previous_identity_ = frame->identity;
         }
       } catch (const std::exception& error) {
         if (!stopped_) {
@@ -230,6 +259,10 @@ class NuvoCamera::Impl {
       clear_source();
       current.reset();
       if (stopped_) break;
+      if (provisional_blocked) {
+        if (wait(std::chrono::seconds(5))) break;
+        continue;
+      }
       if (idle) {
         previous_identity_.reset();
         segment_ = false;
@@ -259,7 +292,20 @@ class NuvoCamera::Impl {
                         : 0) >
            0;
   }
-  void publish(const nuvo::client::Frame& frame) {
+  bool resume_replay() {
+    const auto paused = std::chrono::steady_clock::now();
+    while (!stopped_ && !has_consumers()) {
+      state("waiting for ROS measurement subscribers", 1);
+      if (wait(std::chrono::milliseconds(200))) return false;
+    }
+    // Retain the open recording and pause its pacing, rather than rewinding
+    // the capture stream or catching up in a burst when subscribers return.
+    if (segment_) steady_base_ += std::chrono::steady_clock::now() - paused;
+    return !stopped_;
+  }
+  bool publish(const nuvo::client::Frame& frame, std::int64_t receipt_stamp) {
+    // builtin_interfaces/Time has a signed 32-bit seconds field.
+    constexpr std::int64_t maximum_ros_stamp = 2147483647999999999LL;
     std::int64_t stamp{}, uncertainty = -1;
     bool clock_jump = false;
     if (mode_ == "local_boottime") {
@@ -268,7 +314,7 @@ class NuvoCamera::Impl {
       if (age < -5000000LL || static_cast<double>(age) > max_age_ * 1e9) {
         ++stale_;
         state("stale or future local capture rejected", 1);
-        return;
+        return false;
       }
       const auto offset = sample.system_ns - sample.boottime_ns;
       clock_jump =
@@ -292,22 +338,35 @@ class NuvoCamera::Impl {
       }
       const auto delta = frame.capture_time_ns - source_base_;
       const auto wall_delta = static_cast<double>(delta) / speed_;
-      if (delta > std::numeric_limits<std::int64_t>::max() - ros_base_ ||
+      if (ros_base_ <= 0 || ros_base_ > maximum_ros_stamp ||
+          delta > maximum_ros_stamp - ros_base_ ||
           wall_delta > 1e18)
         throw std::runtime_error("replay timestamp exceeds supported timeline");
-      const auto due =
-          steady_base_ +
+      const auto pacing =
           std::chrono::nanoseconds(static_cast<std::int64_t>(wall_delta));
-      const auto delay = due - std::chrono::steady_clock::now();
-      if (delay > std::chrono::steady_clock::duration::zero() && wait(delay))
-        return;
+      while (!stopped_) {
+        if (lazy_ && !has_consumers() && !resume_replay()) return false;
+        const auto delay = steady_base_ + pacing -
+                           std::chrono::steady_clock::now();
+        if (delay <= std::chrono::steady_clock::duration::zero()) break;
+        if (wait(std::min(delay, std::chrono::steady_clock::duration(
+                                     std::chrono::milliseconds(200)))))
+          return false;
+      }
       stamp = ros_base_ + delta;
       last_source_time_ = frame.capture_time_ns;
     } else
-      stamp = node_.now().nanoseconds();
-    if (stopped_) return;
-    if (stamp <= 0)
-      throw std::runtime_error("ROS acquisition stamp is unavailable");
+      stamp = receipt_stamp;
+    if (stopped_) return false;
+    if (stamp <= 0 || stamp > maximum_ros_stamp)
+      throw std::runtime_error("ROS acquisition stamp is outside supported range");
+    // Rejected replay frames still advance playback pacing. Filtering them
+    // before scheduling would scan a provisional recording at full CPU speed.
+    if (frame.calibration_authority == 0 && !allow_provisional_) {
+      state("provisional calibration: publication requires explicit "
+            "allow_provisional_calibration", 1);
+      return false;
+    }
     std_msgs::msg::Header header;
     header.stamp = rclcpp::Time(stamp);
     header.frame_id = frame_id_;
@@ -356,6 +415,7 @@ class NuvoCamera::Impl {
           clock_jump || frame.calibration_authority == 0 || mode_ == "receipt"
               ? 1
               : 0);
+    return true;
   }
   void diagnose() {
     diagnostic_msgs::msg::DiagnosticArray message;
@@ -424,6 +484,8 @@ class NuvoCamera::Impl {
       diagnostics_;
   rclcpp::Publisher<rosgraph_msgs::msg::Clock>::SharedPtr clock_;
   rclcpp::TimerBase::SharedPtr timer_;
+  rclcpp::node_interfaces::OnSetParametersCallbackHandle::SharedPtr
+      time_parameters_;
 };
 NuvoCamera::NuvoCamera(const rclcpp::NodeOptions& options)
     : Node("nuvo_camera", options), impl_(std::make_unique<Impl>(*this)) {}

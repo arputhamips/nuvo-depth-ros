@@ -9,7 +9,7 @@ Its generated snapshot records base commit, exact LF-normalized source hashes,
 licenses and notices in `nuvo_depth_client_vendor/upstream/SOURCE-MANIFEST.json`.
 
 SDK content SHA-256:
-`12b8177c746bd70e39a583faf386ff3316d6dcaaff774de5cd8e252ede5b4cb6`.
+`1c09096265578bbdb603bbc63e381d77633c619df80f965c79c75f45820c9de5`.
 
 ## Verified boundaries
 
@@ -20,12 +20,14 @@ SDK content SHA-256:
 | Standalone C++ SDK without HTTPS dependencies | 3/3 CTests passed |
 | External consumer using only installed headers/CMake target | Passed |
 | Actual native NUV1 serializer → C++ decoder → Python NVR1 → C++ replay | Passed |
-| ROS conversion and projection tests | Passed |
+| ROS conversion, projection and parameter tests | 11 gtest cases passed; colcon reports 13 including wrappers |
 | Docker multistage build and colcon tests | Passed |
 | Real ROS/DDS replay, source-relative simulation clock and XYZ | Passed with Cyclone DDS |
 | Native host socket → unprivileged ROS container → host DDS | Passed |
 | Numeric supplementary GID and read-only runtime-directory mount | Passed |
 | Native host/container CLOCK_BOOTTIME mapping and freshness | Passed |
+| Host memory handoff with container `--network none --ipc private` | Passed; ROS publication observed without external container networking |
+| ROS native demand excludes encoded preview | Passed; only depth + validity at 10 Hz, preview demand zero |
 | Native socket inode replacement, run identity change and reconnect | Passed |
 | Actual `ros2 launch` with namespace and YAML configuration | Passed |
 | Git-staged SDK checksums across Windows/Linux line endings | Passed |
@@ -49,7 +51,7 @@ quality or physical sensor timing.
 Validation ran on Linux amd64 in Ubuntu 24.04 under WSL2 and an Ubuntu Jazzy
 Docker image. The final unprivileged runtime image was:
 
-`sha256:438983c1f7c6a4b3482c7580ff767d72b8726fc1f31fcc31057dd67c40ebe317`.
+`sha256:c21f96e6f44bab3a3196759b5f5ce308a2c693138b9dcb80d327c18cd26ab16e`.
 
 Its pinned base manifest is
 `ros:jazzy-ros-base@sha256:103b6c417973394659af6804d4917cd489b91e5ed22eb7bef263025a3bed2410`;
@@ -84,3 +86,96 @@ No native capture/matching/calibration, installer/package dependency, service or
 device configuration was changed by this implementation. Existing unrelated
 documentation edits in Nuvo Depth were preserved. No tags, releases or remote
 repository publication were created.
+
+## Integration audit follow-up
+
+Three GPT-6.1 Sol agents with extra-high reasoning audited the node, canonical
+SDK and deployment boundary. Changes were reviewed by the existing chats
+“Research Nuvo Depth for ROS” and “Research first-time setup flow.” Both accepted
+the source changes; the core acceptance names the exact SDK hash above.
+
+- Removed Nuvo Depth's 331-line `tools/pi/validate_ros_bridge.py`, which checked
+  retired topics, ring diagnostics and a hardcoded 161.46 mm rig baseline. The
+  Pi-tools README now points to this adapter's current integration tests.
+  Parsed and tested configuration compatibility fields remain supported.
+- HTTPS frames retain their contiguous receive buffer, avoiding an extra full
+  payload allocation and copy. IPC mappings release received descriptors
+  immediately. Tests retain two frames across later acquisition, cancellation
+  and source destruction, verify unchanged bytes and count retained descriptors.
+- Malformed/partial acquisition is terminal; ordinary empty IPC waits remain
+  reusable and invalidation remains distinguishable. Replay checks declared
+  lengths against the opened file's finite snapshot before allocation.
+- Geometry rejects nonfinite derived matrices, zero/negative encoded baselines
+  and mismatched focal lengths or small baselines, including explicit overrides.
+  Calibration identity, authority and the existing per-unit/seed policy are intact.
+- Lazy replay preserves its cursor and pauses pacing. Deduplication follows
+  successful publication, receipt stamps precede conversion, invalid ROS time
+  ranges fail before a replay wait, and runtime clock-policy changes are rejected.
+  HTTPS cadences below 1/60 Hz fail at startup to honor the 120-second deadline.
+- Rejected provisional replay still follows playback pacing. A blocked live
+  source closes its subscription and probes every five seconds, releasing native
+  matcher demand between probes and recovering when validated calibration appears.
+- XYZ conversion validates geometry and buffer bounds, respects padded rows and
+  precomputes row/column projection factors instead of dividing for every point.
+  XYZ remains optional and subscriber-driven. No Pi speedup is claimed from this
+  host validation.
+- Snapshot checks validate aggregate provenance and reject corruption under both
+  normal Python and `python -O`. Six new snapshot regression tests pass.
+- Deployment CI now builds the final image and exercises a native host fixture
+  through the unprivileged runtime. It records resolved package/image versions.
+  Both CI and Docker use the same pinned base; Docker compiler parallelism
+  defaults to two jobs through `BUILD_JOBS`.
+
+Final clean Release SDK builds passed all three CTests with HTTPS enabled and
+disabled, including installed public consumers. The native serializer, C++
+decoder, Python NVR writer and C++ replay interoperability check passed. The
+fresh Nuvo Depth minimal-host suite passed 52/52 tests; setup consistency and
+CI routing also passed.
+
+The expanded DDS suite passed replay loops and pauses, timestamp policies,
+future-frame rejection followed by acceptance of the same identity, duplicate
+suppression, provisional-calibration pacing/demand release/recovery and restart.
+The ROS reviewer's remaining clock-coverage request was implemented and passed:
+the test subscribes to actual `/clock` messages, checks their equality to frame
+stamps and monotonic source-relative loop values, and checks silence when clock
+publication is disabled.
+`test/native_recording.py` also passed using the actual native serializer's
+unchanged frame bytes, checking calibration, identity, depth and projected XYZ.
+
+The final Docker build passed its colcon checks. The host/container test passed
+with runtime UID 10001 and the host fixture's explicit supplementary GID. It
+first proved permission denial without that group, then checked both native run
+identities across socket replacement and clean SIGINT exit code 0. Local logs,
+XML results, image identity and package inventories are under `output/audit/`.
+The new hosted workflow is configured; no GitHub run or release was created by
+this audit. ARM64 and real-camera qualification remain outstanding.
+
+## Same-device local-only follow-up
+
+The existing final runtime image also passed acquisition with Docker networking
+disabled and a private IPC namespace. With only the read-only runtime directory
+and numeric group supplied, UID 10001 made one local connection, requested six
+frames, reached actual ROS publication and shut down with exit code 0. Its exact
+native subscription selected depth and validity (mask 40), cadence 10000 mHz and
+encoded-preview cadence zero. The host observed the source connection close.
+The existing host-network DDS/restart/permission tests passed in the same run.
+Evidence is in `output/audit/deployment-no-network/`, including immutable image
+identity in both contract reports. This tests host/container transport, not Pi
+camera performance or actual DDS latency under load.
+
+Both native service profiles restrict the daemon to `AF_UNIX`; the network
+gateway is a separate process. The minimal profile omits it and the encoder.
+The ROS README describes keeping an existing full install/calibration intact
+while masking the gateway for explicit local-only operation. The host network
+remains available to ROS DDS and SSH. No Pi services were changed by these
+host-side tests and documentation edits.
+
+A clean current-source native gateway/encoder Release build also passed six
+targeted gateway demand checks and the local-frame-server/encoder CTests (2/2).
+The checks cover idle gateway requests, subscription union, cadence separation,
+disconnect release and bounded snapshot acquisition. The targeted harness kept
+the existing test order and published a fresh fixture frame before the existing
+class shutdown check. No runtime source changes were required. An idle gateway
+does not register raw or encoded native demand; the native encoder receives
+zero preview demand for the ROS-only subscription. Explicit browser/remote
+subscriptions or diagnostic trace/snapshot flags remain additional consumers.
