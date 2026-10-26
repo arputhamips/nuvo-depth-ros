@@ -116,8 +116,15 @@ jobs:
             https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.3.0/ros2-apt-source_1.3.0.noble_all.deb
           echo 'f31d84adf5054c7d60ded0e82c0f776a77ea33af53d08f40b9ad7c94cca55296  /tmp/ros2-apt-source.deb' | sha256sum --check
           sudo apt-get install -y /tmp/ros2-apt-source.deb
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          # Some hosted AMD64 runners download from the Azure mirror extremely
+          # slowly. Use Ubuntu's standard HTTPS archive; ARM64 ports stay intact.
+          if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
+            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
+              /etc/apt/sources.list.d/ubuntu.sources
+          fi
+          apt_network=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
+          sudo apt-get "${apt_network[@]}" update
+          sudo apt-get "${apt_network[@]}" install -y --no-install-recommends \
             python3-colcon-common-extensions ros-jazzy-ament-cmake \
             ros-jazzy-rosidl-default-generators ros-jazzy-rclpy \
             ros-jazzy-sensor-msgs ros-jazzy-stereo-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs \
