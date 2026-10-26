@@ -1,12 +1,26 @@
-# Download and run the Docker trial image
+# Download and run the Docker image
 
 The container image includes Ubuntu 24.04, ROS 2 Jazzy and this driver. It runs
 the ROS adapter; the native Nuvo camera service and existing calibration stay on
-the camera host. The trial image name is:
+the camera host. The initial release image is:
 
 ```text
-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial
+ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0
 ```
+
+Use [release v0.1.0](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.0)
+for the source, image digest, checksums and validation record. No GitHub login is
+needed to pull the public image. The release image selects `linux/amd64` or
+`linux/arm64` automatically and has HTTPS enabled alongside local acquisition
+and recording replay. No ROS APT package is provided.
+
+`jazzy-0.1.0` identifies this release; the publication workflow refuses to replace
+an existing versioned image. Pin the release's manifest digest when you need an
+immutable reference. `jazzy-trial` remains a mutable preview label for subsequent
+manually published trials. Hosted tests do not establish physical Pi camera
+accuracy or sustained performance.
+
+## Earlier trial validation
 
 The first public trial was published on **26 October 2026** from
 [`c326cfb`](https://github.com/arputhamips/nuvo-depth-ros/commit/c326cfb8e659619aebf3eaf983782ae4c48db0fc).
@@ -26,34 +40,24 @@ docker pull ghcr.io/arputhamips/nuvo-depth-ros@sha256:ee34359e6c9d42a5fdc4fb9227
 Local evidence is retained under `output/audit/container-trial/` (ignored by Git),
 including the anonymous pull, published manifest and hosted HTTPS reports.
 
-The manual publication workflow builds and tests `linux/arm64` on an ARM64 runner
-and `linux/amd64` on an AMD64 runner. The shared image name selects the matching
-architecture automatically. The image has HTTPS enabled and also supports local
-acquisition and recording replay. No ROS APT package is released by this workflow.
-
-`jazzy-trial` is a mutable container label, **not a Git tag or GitHub release**.
-For repeatable deployments, use the workflow's `sha-COMMIT` image reference or
-record and pin the multi-platform manifest digest. This remains a development
-trial: hosted tests do not establish Pi camera accuracy or sustained performance.
-
 ## Get the image and matching deployment files
 
 On the Linux computer that will run the driver, install Docker Engine, Compose
-and Git. Then pull the trial and check out the source revision recorded in it:
+and Git. Then pull the release and check out the source revision recorded in it:
 
 ```bash
-NUVO_TRIAL_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial
-sudo docker pull "$NUVO_TRIAL_IMAGE"
+NUVO_DOCKER_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0
+sudo docker pull "$NUVO_DOCKER_IMAGE"
 git clone https://github.com/arputhamips/nuvo-depth-ros.git
 cd nuvo-depth-ros
-DRIVER_REVISION="$(sudo docker image inspect "$NUVO_TRIAL_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
+DRIVER_REVISION="$(sudo docker image inspect "$NUVO_DOCKER_IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')"
 git checkout --detach "$DRIVER_REVISION"
 ```
 
 For an existing checkout, use `git fetch origin` instead of cloning and preserve
 your local configuration before switching revisions. The checkout supplies small
 Compose/YAML files; no compilation is needed. Pinning it to the image avoids
-mixing a trial image with older deployment files on the default branch.
+mixing an image with deployment files from a different version.
 
 ## Same Pi 5
 
@@ -62,7 +66,7 @@ native Nuvo Depth, use the matching checkout above, and write
 `NUVO_VIDEO_GID` and `ROS_DOMAIN_ID` to `docker/.env`. Add:
 
 ```dotenv
-NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial
+NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0
 ```
 
 Edit `nuvo_bringup/config/camera.yaml` as needed. Public beta 8 still requires the
@@ -80,10 +84,11 @@ sudo docker compose --env-file docker/.env -f docker/compose.yaml logs --tail=50
 Then start the README's best-effort depth subscriber. The default driver waits
 for a measurement subscriber before requesting frames.
 
-For a later trial update, pull again and run `up -d --no-build`. Keep a known
-working digest so you can return to it. If building locally instead, remove
+For an update, select the new release's image and matching deployment files,
+then pull and run `up -d --no-build`. Keep a known working digest so you can
+return to it. If building locally instead, remove
 `NUVO_IMAGE` from `docker/.env` and use the README's build commands; this avoids
-giving a locally built image the registry trial name.
+giving a locally built image the registry release name.
 
 ## Remote Ethernet or provisioned USB Ethernet
 
@@ -108,7 +113,7 @@ put the device private key there. Prepare the environment from the repository ro
 mkdir -p docker/credentials
 chmod 700 docker/credentials
 chmod 600 docker/credentials/nuvo-token
-printf 'NUVO_UID=%s\nNUVO_GID=%s\nROS_DOMAIN_ID=0\nNUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial\n' \
+printf 'NUVO_UID=%s\nNUVO_GID=%s\nROS_DOMAIN_ID=0\nNUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0\n' \
   "$(id -u)" "$(id -g)" > docker/.env
 ```
 
@@ -132,10 +137,13 @@ The remote setup needs no `nuvo-video` group or camera socket mount. See
 [connection paths](connections.md) for the distinction between HTTPS acquisition
 and subscribing to DDS topics from a driver already running on the Pi.
 
-## How trial images are produced
+## How images and releases are produced
 
 Maintainers manually run **ROS and client contracts** with `architecture=both`
-and `publish_image=true`, selecting the reviewed source branch. Ordinary pushes,
+and `publish_image=true`, selecting the reviewed source branch. For a release,
+also set `release_version` to the matching version in all four ROS package
+manifests (for example `0.1.0`). This adds `jazzy-0.1.0` and refuses to overwrite
+an existing versioned image. Ordinary pushes,
 pull requests and default manual runs only test and upload artifacts. The publish
 job runs only after all source and deployment jobs pass, including HTTPS ON/OFF
 variants, full-size DDS, local IPC and the remote HTTPS container check.
@@ -145,6 +153,13 @@ manifest. It records source revision and license labels in the image, and retain
 the manifest plus a source archive in `trial-image-provenance`. The complete
 vendor source and manifest remain in the public repository at that commit.
 It creates no Git tag, GitHub release or APT package.
+
+After the manual run succeeds, maintainers separately create the Git tag and
+GitHub release at the exact tested source revision, with explicit release
+authorization. Attach the image provenance, matching source archive and
+checksums, and link the successful validation run. Verify an anonymous manifest
+lookup and pull before publishing the release notes. Each release must retain
+the documented hardware and native-runtime compatibility limits.
 
 On the first GHCR publication, a repository administrator may need to set the
 package visibility to **Public**. Verify a pull without registry credentials

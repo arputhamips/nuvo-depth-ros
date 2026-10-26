@@ -8,9 +8,10 @@ Applications can use standard ROS messages without the optional Nuvo metadata.
 The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
-This is a development driver with no released ROS APT package.
-A [manually published Docker trial image](docs/docker-image.md) is provided for
-Pi ARM64 and Linux PC AMD64; local source builds remain supported.
+The initial [v0.1.0 release](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.0)
+provides source and a [prebuilt Docker image](docs/docker-image.md) for Pi ARM64
+and Linux PC AMD64. There is no released ROS APT package; local source builds
+remain supported. See the [changelog](CHANGELOG.md) for features and limitations.
 [Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
 build/runtime checks. Pi camera operation, sustained performance and metric
 accuracy still need qualification.
@@ -54,7 +55,7 @@ sudo docker compose version
 Clone the driver and save the host's numeric group ID:
 
 ```bash
-git clone https://github.com/arputhamips/nuvo-depth-ros.git
+git clone --branch v0.1.0 https://github.com/arputhamips/nuvo-depth-ros.git
 cd nuvo-depth-ros
 NUVO_VIDEO_GID="$(getent group nuvo-video | cut -d: -f3)"
 test -n "$NUVO_VIDEO_GID" || { echo "Missing nuvo-video group" >&2; exit 1; }
@@ -72,15 +73,15 @@ need the geometry override, provisional preview or point clouds. Its directory
 is mounted at `/config`: a prepared host file `nuvo_bringup/config/geometry.json`
 uses `calibration_override_file: /config/geometry.json` in the YAML.
 
-For the prebuilt trial, add
-`NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial` to `docker/.env`, then:
+For the prebuilt release, add
+`NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0` to `docker/.env`, then:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml pull
 sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --no-build
 ```
 
-See [trial image details and remote-camera setup](docs/docker-image.md). To build
+See [image details and remote-camera setup](docs/docker-image.md). To build
 from this checkout instead, leave `NUVO_IMAGE` unset and run:
 
 ```bash

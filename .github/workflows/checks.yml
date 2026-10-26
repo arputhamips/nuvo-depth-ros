@@ -13,6 +13,10 @@ on:
         description: Publish the tested AMD64 + ARM64 trial image to GHCR (requires both)
         type: boolean
         default: false
+      release_version:
+        description: Optional package version for a fixed jazzy-VERSION image tag (requires publication)
+        type: string
+        default: ''
 permissions:
   contents: read
 jobs:
@@ -30,10 +34,28 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {persist-credentials: false}
       - name: Validate publication request
-        if: github.event_name == 'workflow_dispatch' && inputs.publish_image
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
         env:
           SELECTED_ARCH: ${{ inputs.architecture }}
-        run: test "$SELECTED_ARCH" = both
+          PUBLISH_IMAGE: ${{ inputs.publish_image }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          if [[ "$PUBLISH_IMAGE" == true ]]; then
+            test "$SELECTED_ARCH" = both
+          fi
+          if [[ -n "$RELEASE_VERSION" ]]; then
+            test "$PUBLISH_IMAGE" = true
+            [[ "$RELEASE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            python3 - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          for package in ('nuvo_camera', 'nuvo_camera_msgs', 'nuvo_bringup', 'nuvo_depth_client_vendor'):
+              version = ET.parse(f'{package}/package.xml').findtext('version')
+              if version != os.environ['RELEASE_VERSION']:
+                  raise SystemExit(f'{package}: version {version} does not match requested release')
+          PY
+          fi
       - name: Install declared development dependencies
         run: |
           apt-get update
@@ -193,11 +215,21 @@ jobs:
         shell: bash
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
           set -euo pipefail
           registry_image="ghcr.io/${GITHUB_REPOSITORY,,}"
           printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           trap 'docker logout ghcr.io' EXIT
+          release_tags=()
+          if [[ -n "$RELEASE_VERSION" ]]; then
+            release_image="$registry_image:jazzy-$RELEASE_VERSION"
+            if docker buildx imagetools inspect "$release_image" >/dev/null 2>&1; then
+              echo "Refusing to replace existing release image: $release_image" >&2
+              exit 1
+            fi
+            release_tags=(--tag "$release_image")
+          fi
           for architecture in amd64 arm64; do
             docker load --input "images/tested-image-$architecture/image.tar.gz"
             test "$(docker image inspect nuvo-depth-ros:ci-ON --format '{{.Architecture}}')" = "$architecture"
@@ -207,6 +239,7 @@ jobs:
           done
           docker buildx imagetools create \
             --tag "$registry_image:sha-$GITHUB_SHA" --tag "$registry_image:jazzy-trial" \
+            "${release_tags[@]}" \
             "$registry_image:sha-$GITHUB_SHA-amd64" "$registry_image:sha-$GITHUB_SHA-arm64"
           docker buildx imagetools inspect "$registry_image:sha-$GITHUB_SHA" | tee image-manifest.txt
           git archive --format=tar.gz --prefix=nuvo-depth-ros/ HEAD > nuvo-depth-ros-source.tar.gz
@@ -216,6 +249,9 @@ jobs:
             echo "Source commit: $GITHUB_SHA"
             echo "Pull: docker pull $registry_image:jazzy-trial"
             echo "Pinned commit image: $registry_image:sha-$GITHUB_SHA"
+            if [[ -n "$RELEASE_VERSION" ]]; then
+              echo "Release image: $registry_image:jazzy-$RELEASE_VERSION"
+            fi
             echo 'Platforms: linux/amd64 and linux/arm64. Synthetic CI checks are not Pi camera qualification.'
             echo 'For a new GHCR package, set package visibility to Public and verify an anonymous pull.'
           } >> "$GITHUB_STEP_SUMMARY"

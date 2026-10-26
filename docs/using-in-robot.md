@@ -9,7 +9,7 @@ currently tested. The repository's Nuvo-authored code is GPL-3.0-or-later.
 ## Choose how to connect
 
 See [connection paths](connections.md) for socket/shared-memory, Ethernet and
-USB Ethernet details, and [Docker trial images](docker-image.md) to skip building.
+USB Ethernet details, and [prebuilt Docker images](docker-image.md) to skip building.
 
 | Your setup | Start here |
 |---|---|
