@@ -3,6 +3,8 @@
 ROS 2 Jazzy driver that publishes [Nuvo Depth](https://github.com/arputhamips/nuvo-depth)
 output as depth images, validity and CameraInfo, with optional XYZ, rectified
 stereo images and disparity.
+It has no dependency on Nuvo Base or any robot-specific control/navigation stack.
+Applications can use standard ROS messages without the optional Nuvo metadata.
 The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
@@ -10,8 +12,13 @@ This is a source package, with no released ROS APT package or prebuilt image.
 [Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
 build/runtime checks. Pi camera operation, sustained performance and metric
 accuracy still need qualification.
-Use the [integration guide](docs/integration.md) when replacing an existing
-camera adapter or commissioning a downstream consumer.
+New to the driver? Follow [Use Nuvo Depth in your ROS project](docs/using-in-robot.md)
+for custom namespaces, frames, topic remaps, a Python subscriber, RViz and multiple
+cameras. Use the [integration guide](docs/integration.md) for commissioning.
+
+Choose the [Pi Docker setup](#quick-start), an [Ubuntu Jazzy source build](docs/reference.md#source-build-and-development),
+a [remote HTTPS camera](docs/reference.md#remote-https), or [recording replay](docs/reference.md#nvr1-replay).
+ROS 1 and other ROS 2 distributions are not currently tested.
 
 ## Quick start
 
@@ -51,7 +58,9 @@ printf 'NUVO_VIDEO_GID=%s\nROS_DOMAIN_ID=0\n' "$NUVO_VIDEO_GID" > docker/.env
 ```
 
 The ignored `docker/.env` persists these settings across terminals. Change
-`ROS_DOMAIN_ID` there to match your robot. Run all Compose commands from this
+`ROS_DOMAIN_ID` there to match your robot. Optional `NUVO_NAMESPACE` and
+`NUVO_CONFIG` select your topic namespace and in-container YAML path; see the
+[robot setup example](docs/using-in-robot.md#configure-one-camera). Run all Compose commands from this
 repository root; each explicitly loads that file.
 
 Edit [`nuvo_bringup/config/camera.yaml`](nuvo_bringup/config/camera.yaml) if you
@@ -116,7 +125,7 @@ jumps. Use the [strict example](nuvo_bringup/config/strict.yaml) for commissioni
 
 The default namespace is `/nuvo/front`; `frame_id` is
 `nuvo_front_left_rectified_optical`. Supply its mounting transform in your robot's
-URDF/TF tree. The launch arguments are `namespace` and `config`; see the
+URDF/TF tree. The launch arguments are `namespace`, `name` and `config`; see the
 [reference](docs/reference.md) for source builds and other launch configurations.
 
 ## Topics

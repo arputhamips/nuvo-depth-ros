@@ -441,10 +441,28 @@ export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
 ros2 launch nuvo_bringup camera.launch.py
 ```
 
+For an existing colcon workspace, clone this repository under its `src/`
+directory and run colcon from the workspace root. The same packages are built;
+there is no dependency on a Nuvo robot workspace. See the
+[robot integration examples](using-in-robot.md) for launch and remapping.
+
 The component is registered as `nuvo_camera::NuvoCamera`; the standalone
 executable is `nuvo_camera_node`. Driver parameters are startup-only. Connecting
 registers product demand without changing exposure, stereo, calibration or
 encoder settings.
+
+A C++ package that instantiates the node or uses the public conversion helpers
+can declare `<depend>nuvo_camera</depend>` and link the installed target:
+
+```cmake
+find_package(nuvo_camera REQUIRED)
+add_executable(my_camera_app src/main.cpp)
+target_link_libraries(my_camera_app PRIVATE nuvo_camera::nuvo_camera_component)
+```
+
+The target supplies its headers, C++20 requirement and transitive dependencies.
+Ordinary topic consumers need only the standard message packages they use;
+`nuvo_camera_msgs` is needed only for capture metadata.
 
 For a local/replay-only source build, omit `libboost-system-dev`, `libssl-dev`
 and `libc-ares-dev` from the dependency command and add
@@ -469,3 +487,18 @@ Do not hand-edit the snapshot. `SOURCE-MANIFEST.json` records the source commit,
 file hashes and license notices; `--check` verifies it without a sibling source
 checkout. Builds use the checked-in snapshot without downloading an SDK branch.
 Nuvo-authored code and the SDK use GPL-3.0-or-later.
+
+After building, sourcing the workspace and setting the DDS profile above, the
+repository's additional installed-package and DDS checks can be run with:
+
+```bash
+python3 tools/refresh_sdk.py --check
+python3 test/installed_consumer.py
+python3 test/robot_integration.py
+python3 test/integration.py
+python3 test/fullsize.py
+```
+
+These use synthetic frames, local socket fixtures and NVR1 replay. They do not
+connect to a physical camera. The [generic-driver audit](audit-20261026.md)
+records the tested boundary and remaining hardware/native-version requirements.

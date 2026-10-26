@@ -1,9 +1,9 @@
-Nuvo Depth
+Nuvo Depth ROS 2
 Copyright (C) 2026 NuvoHardware
 
-Nuvo-authored software in this repository, including the runtime, gateway,
-installer, tools, SDKs and web console, is free software: you may redistribute
-it and/or modify it under the terms of the GNU General Public License as
+Nuvo-authored software in this repository, including the ROS driver, messages,
+launch files, tools and exported acquisition SDK, is free software: you may
+redistribute it and/or modify it under the terms of the GNU General Public License as
 published by the Free Software Foundation, either version 3 of the License,
 or (at your option) any later version (SPDX: GPL-3.0-or-later).
 
@@ -13,7 +13,8 @@ FOR A PARTICULAR PURPOSE. See LICENSE for the complete terms.
 
 Third-party software and assets retain their own copyright and license notices:
 
-- web/assets/fonts: SIL Open Font License 1.1; see OFL.txt in that directory.
+- The generated SDK retains its upstream LICENSE, NOTICE and SOURCE-MANIFEST.json
+  in nuvo_depth_client_vendor/upstream.
 - External build/runtime dependencies retain their upstream terms. Their source
   and notices must be accounted for when redistributing a binary or OS image.
 

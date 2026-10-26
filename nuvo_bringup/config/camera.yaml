@@ -4,6 +4,7 @@
     source: local
     endpoint: /run/nuvo-depth/data.sock
     frame_id: nuvo_front_left_rectified_optical
+    right_frame_id: nuvo_front_right_rectified_optical
     timestamp_mode: local_boottime
     cadence_hz: 10.0
     delivery: best_effort

@@ -41,6 +41,8 @@ jobs:
           colcon test-result --verbose
           source install/setup.bash
           export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
+          RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/installed_consumer.py
+          RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/robot_integration.py
           RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/integration.py
           RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/fullsize.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
