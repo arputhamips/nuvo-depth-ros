@@ -154,7 +154,13 @@ def main():
                     (root / 'data.sock').chmod(0o660)
                     observer.spin(lambda: associated(observer, '4'), seconds=15)
                     observer.verify('local_boottime', '4')
-                    report.update(passed=True, run_uuids=['2' * 32, '4' * 32])
+                    assert peer.subscriptions and all(
+                        subscription == dict(products=40, cadence_millihz=10000,
+                                             preview_cadence_millihz=0, reserved=0)
+                        for subscription in peer.subscriptions), peer.subscriptions
+                    report.update(passed=True, run_uuids=['2' * 32, '4' * 32],
+                                  subscriptions=peer.subscriptions,
+                                  directory_mount_reconnect=True)
                 except Exception:
                     log.flush()
                     log.seek(0)
@@ -162,10 +168,12 @@ def main():
                     raise
                 finally:
                     if process:
+                        shutdown_started = time.monotonic()
                         subprocess.run(
                             ['docker', 'stop', '--signal', 'SIGINT', '--time', '4', name],
                             stdout=subprocess.DEVNULL, check=False, timeout=10)
                         process.wait(timeout=8)
+                        report['shutdown_seconds'] = time.monotonic() - shutdown_started
                         report['exit_code'] = process.returncode
                         if process.returncode != 0:
                             report['passed'] = False

@@ -6,17 +6,39 @@ from sensor_msgs.msg import Image, CameraInfo, PointCloud2
 from nuvo_camera_msgs.msg import FrameMetadata
 from diagnostic_msgs.msg import DiagnosticArray
 from rosgraph_msgs.msg import Clock
+from stereo_msgs.msg import DisparityImage
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 spec=importlib.util.spec_from_file_location('fixture',ROOT/'nuvo_depth_client_vendor/upstream/tests/transports.py')
 fixture=importlib.util.module_from_spec(spec);spec.loader.exec_module(fixture)
-def packet(sequence=1,run='2',authority=1,geometry=True,live=False,capture_time_ns=None,capture_sequence=None):
+def packet(sequence=1,run='2',authority=1,geometry=True,live=False,capture_time_ns=None,capture_sequence=None,fields=None,optional_products=False):
     wire=fixture.frame(sequence);size=fixture.HEADER.unpack_from(wire)[5]
     document=json.loads(wire[32:32+size]);document['run_uuid']=run*32;document['calibration_authority']=authority
     if live:document['capture_time_ns']=time.clock_gettime_ns(time.CLOCK_BOOTTIME)-10000000
     if capture_time_ns is not None:document['capture_time_ns']=capture_time_ns
     if capture_sequence is not None:document['capture_sequence']=capture_sequence
     if not geometry:document.pop('calibration_geometry')
-    return fixture.encode(document,wire[32+size:],sequence)
+    if fields:document.update(fields)
+    payload=wire[32+size:]
+    if optional_products:
+        for kind,fmt,data in [('left_rectified','gray8',bytes([17,18])),('right_rectified','gray8',bytes([27,28])),('disparity','float32_le',struct.pack('<ff',5.,math.nan))]:
+            document['products'].append(dict(kind=kind,format=fmt,width=2,height=1,offset=len(payload),length=len(data)))
+            payload+=data
+        document['selected_products']=document['available_products']=47
+        document['disparity_metadata']={'accepted_min_px':0.,'accepted_max_px':64.,'quantization_px':.0625,'invalid_is_nan':True,'unit':'matching_grid_pixels','valid_roi':{'x':0,'y':0,'width':2,'height':1}}
+    return fixture.encode(document,payload,sequence)
+
+def select_products(wire,mask):
+    """A native peer returns only the products in its accepted subscription."""
+    header=fixture.HEADER.unpack_from(wire);size=header[5]
+    document=json.loads(wire[32:32+size]);pixels=wire[32+size:];payload=b'';products=[];available=0
+    bits={'left_rectified':1,'right_rectified':2,'disparity':4,'depth':8,'validity':32}
+    for original in document['products']:
+        bit=bits.get(original['kind'],0)
+        if not bit & mask:continue
+        product=dict(original);start=product['offset'];length=product['length']
+        product['offset']=len(payload);payload+=pixels[start:start+length];products.append(product);available|=bit
+    document['products']=products;document['selected_products']=mask;document['available_products']=available
+    return fixture.encode(document,payload,header[-1])
 class Peer:
     def __init__(self,path,run,producer=None):
         self.path=path;self.run=run;self.stop=threading.Event();self.server=socket.socket(socket.AF_UNIX,socket.SOCK_SEQPACKET)
@@ -45,6 +67,8 @@ class Peer:
                     assert request[:4]==b'NVW2';self.stop.wait(.05)
                     self.requests+=1;sequence+=1
                     wire=self.producer(sequence,self.run) if self.producer else packet(sequence,self.run,live=True)
+                    if wire is None:c.send(b'NVN2');continue
+                    wire=select_products(wire,self.subscriptions[-1]['products'])
                     size=fixture.HEADER.unpack_from(wire)[5];document=json.loads(wire[32:32+size])
                     fd=os.memfd_create('ros-fixture',os.MFD_ALLOW_SEALING);os.write(fd,wire)
                     fcntl.fcntl(fd,fcntl.F_ADD_SEALS,fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|getattr(fcntl,'F_SEAL_FUTURE_WRITE',0x10))
@@ -101,7 +125,9 @@ class Observer:
         assert math.isnan(struct.unpack_from('<f',bytes(p.data),12)[0]);assert p.width==2 and not p.is_dense
 def start(binary,namespace,log,**parameters):
     args=[binary,'--ros-args','-r','__ns:='+namespace]
-    for key,value in dict(parameters,publish_points=True,point_stride=1).items():args+=['-p',key+':='+str(value).lower() if isinstance(value,bool) else key+':='+str(value)]
+    for key,value in dict(parameters,publish_points=True,point_stride=1).items():
+        encoded=json.dumps(value) if isinstance(value,(str,bool)) else str(value)
+        args+=['-p',key+':='+encoded]
     return subprocess.Popen(args,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
 
 def write_recording(path,packets):
@@ -130,15 +156,18 @@ def lazy_replay(binary,root):
 
 def local_edge_cases(binary,root):
     path=root/'edge.sock';future=time.clock_gettime_ns(time.CLOCK_BOOTTIME)+1500000000
-    peer=Peer(path,'2',lambda sequence,run:packet(sequence,run,capture_time_ns=future,capture_sequence=1))
+    healthy=[False]
+    peer=Peer(path,'2',lambda sequence,run:packet(sequence,run,live=healthy[0],capture_time_ns=None if healthy[0] else future,capture_sequence=sequence if healthy[0] else 1))
     observer=Observer('/contract_future');log=open(root/'future.log','w+')
     process=start(binary,'/contract_future',log,source='local',endpoint=path)
     try:
         def counted():
             return any(dict((v.key,v.value) for v in s.values).get('duplicate_frames','0')!='0' and
                        dict((v.key,v.value) for v in s.values).get('stale_frames','0')!='0' for s in observer.diagnostics)
-        observer.spin(lambda:observer.ready(1) and counted())
-        assert len(observer.messages['metadata'])==1,'a capture identity was published more than once'
+        observer.spin(counted)
+        assert not observer.messages['metadata'],'a future capture became fresh by repeating its identity'
+        healthy[0]=True
+        observer.spin(lambda:observer.ready())
         observer.verify('local_boottime','2')
     except Exception:
         log.flush();log.seek(0);print(log.read(),file=sys.stderr);raise
@@ -162,7 +191,7 @@ def provisional_replay(binary,root):
 
 def receipt_timestamps(binary,root):
     path=root/'receipt.sock'
-    peer=Peer(path,'2',lambda sequence,run:packet(sequence,run,capture_time_ns=1))
+    peer=Peer(path,'2',lambda sequence,run:packet(sequence,run,capture_time_ns=sequence))
     log=open(root/'receipt.log','w+')
     process=start(binary,'/contract_receipt',log,source='local',endpoint=path,timestamp_mode='receipt')
     try:
@@ -171,7 +200,7 @@ def receipt_timestamps(binary,root):
         observer=Observer('/contract_receipt');observer.spin(lambda:observer.ready())
         observer.verify('receipt','2')
         for stamp,metadata in observer.messages['metadata'].items():
-            assert metadata.source_capture_time_ns==1 and metadata.timestamp_uncertainty_ns==-1
+            assert metadata.source_capture_time_ns==metadata.capture_sequence and metadata.timestamp_uncertainty_ns==-1
             assert 0<=observer.received[stamp]-stamp<1000000000,'receipt timestamp does not label arrival'
     finally:stop(process);peer.close();observer.node.destroy_node();log.close()
 
@@ -204,6 +233,144 @@ def invalid_replay_timeline(binary,root):
                                  'replay timestamp exceeds' in s.message for s in observer.diagnostics),seconds=4)
         assert len(observer.messages['metadata'])<=1,'out-of-range ROS timestamp was published'
     finally:stop(process);observer.node.destroy_node();log.close()
+
+def latest_status(observer, namespace):
+    return next((s for s in reversed(observer.diagnostics) if s.name==namespace+'/nuvo_camera'),None)
+
+def frame_pins_and_expiry(binary,root):
+    for pin,expected,wrong,reason in [
+        ('expected_calibration_sha256','3'*64,{'calibration_sha256':'4'*64},'calibration_pin_mismatch'),
+        ('expected_device_uuid','1'*32,{'device_uuid':'4'*32},'device_pin_mismatch')]:
+        namespace='/contract_'+pin;path=root/(pin+'.sock');fields=[wrong];pending=[False]
+        peer=Peer(path,'2',lambda sequence,run:None if pending[0] else packet(sequence,run,live=True,fields=fields[0]))
+        observer=Observer(namespace);log=open(root/(pin+'.log'),'w+')
+        process=start(binary,namespace,log,source='local',endpoint=path,maximum_frame_age_s=.5,**{pin:expected})
+        try:
+            observer.spin(lambda:latest_status(observer,namespace) is not None and latest_status(observer,namespace).message==reason)
+            assert not observer.messages['metadata'],'wrong pin published data'
+            fields[0]={};observer.spin(lambda:observer.ready())
+            pending[0]=True
+            def expired():
+                status=latest_status(observer,namespace)
+                values={v.key:v.value for v in status.values} if status else {}
+                return values.get('output_available')=='false' and values.get('reject_reason')=='stale_acquisition'
+            observer.spin(expired,seconds=4)
+            values={v.key:v.value for v in latest_status(observer,namespace).values}
+            assert float(values['publication_age_s'])>.5 and float(values['source_age_s'])>.5
+            count=len(observer.messages['metadata'])
+            end=time.monotonic()+.3
+            while time.monotonic()<end:rclpy.spin_once(observer.node,timeout_sec=.05)
+            assert len(observer.messages['metadata'])==count,'no-frame wait published or refreshed data'
+        finally:stop(process);peer.close();observer.node.destroy_node();log.close()
+
+def continuity_reconnect_and_idle(binary,root):
+    namespace='/contract_continuity';path=root/'continuity.sock';fixed=[None]
+    def produce(sequence,run):
+        return packet(sequence,run,live=True,capture_sequence=sequence if fixed[0] is None else fixed[0])
+    peer=Peer(path,'2',produce);observer=Observer(namespace);log=open(root/'continuity.log','w+')
+    process=start(binary,namespace,log,source='local',endpoint=path)
+    try:
+        observer.spin(lambda:observer.ready())
+        high=max(m.capture_sequence for m in observer.messages['metadata'].values());fixed[0]=1
+        observer.spin(lambda:latest_status(observer,namespace) is not None and latest_status(observer,namespace).message in ('acquisition_regressed','duplicate_capture'))
+        peer.close();peer=Peer(path,'2',produce)
+        observer.spin(lambda:peer.connections>0 and latest_status(observer,namespace).message in ('acquisition_regressed','duplicate_capture'))
+        observer.node.destroy_node();time.sleep(.8)
+        observer=Observer(namespace)
+        observer.spin(lambda:latest_status(observer,namespace) is not None and latest_status(observer,namespace).message in ('acquisition_regressed','duplicate_capture'))
+        assert not observer.messages['metadata'],'reconnect/lazy idle erased capture regression protection'
+        fixed[0]=high+100
+        observer.spin(lambda:observer.ready(1))
+        peer.close();peer=Peer(path,'4')
+        observer.spin(lambda:observer.ready(run='4'))
+        peer.close();peer=Peer(path,'5',lambda sequence,run:packet(sequence,run,live=True,fields={'device_uuid':'6'*32}))
+        observer.spin(lambda:latest_status(observer,namespace).message=='device_changed')
+        assert {v.key:v.value for v in latest_status(observer,namespace).values}['fault_latched']=='true'
+        observer.spin(lambda:peer.client is None)
+        requests=peer.requests;time.sleep(.3)
+        assert peer.requests==requests,'latched identity fault retained native demand'
+        peer.close();peer=Peer(path,'4')
+        time.sleep(.6)
+        assert peer.connections==0,'latched identity fault reconnected'
+        end=time.monotonic()+.3
+        while time.monotonic()<end:rclpy.spin_once(observer.node,timeout_sec=.05)
+        assert latest_status(observer,namespace).message=='device_changed','device replacement latch was erased on reconnect'
+    finally:stop(process);peer.close();observer.node.destroy_node();log.close()
+
+def optional_subscriber_demand(binary,root):
+    namespace='/contract_products';path=root/'products.sock'
+    peer=Peer(path,'2',lambda sequence,run:packet(sequence,run,live=True,optional_products=True))
+    log=open(root/'products.log','w+')
+    process=start(binary,namespace,log,source='local',endpoint=path,publish_left_rectified=True,publish_right_rectified=True,publish_disparity=True)
+    node=rclpy.create_node('product_observer');qos=QoSProfile(depth=20,reliability=ReliabilityPolicy.BEST_EFFORT)
+    images=[];infos=[];disparities=[]
+    def spin(predicate,seconds=8):
+        deadline=time.monotonic()+seconds
+        while time.monotonic()<deadline:
+            rclpy.spin_once(node,timeout_sec=.05)
+            if predicate():return
+        raise AssertionError('optional demand timed out: '+str(peer.subscriptions))
+    try:
+        time.sleep(.5);assert not peer.connections,'unused optional publishers acquired native frames'
+        left=node.create_subscription(Image,namespace+'/left/image_rect',images.append,qos)
+        left_info=node.create_subscription(CameraInfo,namespace+'/left/camera_info',infos.append,qos)
+        spin(lambda:len(images)>=3 and len(infos)>=3)
+        assert peer.subscriptions[-1]['products']==1,'image-only demand enabled native matching'
+        assert images[-1].encoding=='mono8' and list(images[-1].data)==[17,18]
+        assert infos[-1].width==2 and infos[-1].p[0]==100.
+        disparity=node.create_subscription(DisparityImage,namespace+'/disparity',disparities.append,qos)
+        spin(lambda:len(disparities)>=3 and peer.subscriptions[-1]['products']==37)
+        assert disparities[-1].f==100. and abs(disparities[-1].t-.1)<1e-6
+        node.destroy_subscription(left);node.destroy_subscription(left_info)
+        spin(lambda:peer.subscriptions[-1]['products']==36)
+        node.destroy_subscription(disparity)
+        spin(lambda:peer.client is None)
+        before=peer.connections;time.sleep(.4);assert peer.connections==before
+        metadata=[]
+        meta=node.create_subscription(FrameMetadata,namespace+'/frame_metadata',metadata.append,qos)
+        spin(lambda:len(metadata)>=3)
+        assert peer.subscriptions[-1]['products']==40,'metadata demand did not preserve default depth/validity contract'
+        assert all(s['preview_cadence_millihz']==0 for s in peer.subscriptions),'measurement subscribers enabled preview encoding'
+        node.destroy_subscription(meta)
+    finally:stop(process);peer.close();node.destroy_node();log.close()
+
+def replay_product_availability(binary,root):
+    for scenario in ('depth_only','image_only','missing_image_geometry'):
+        recording=root/(scenario+'.nvr');frames=[]
+        parameters={}
+        for sequence in range(1,4):
+            wire=packet(sequence,optional_products=scenario!='depth_only')
+            size=fixture.HEADER.unpack_from(wire)[5];document=json.loads(wire[32:32+size])
+            if scenario=='missing_image_geometry':
+                override=root/'matching-only.json'
+                override.write_text(json.dumps({'calibration_sha256':document['calibration_sha256'],
+                    'matching_grid':document['matching_grid'],'matching':document['calibration_geometry']['matching']}))
+                parameters['calibration_override_file']=str(override)
+                document.pop('calibration_geometry')
+            wire=fixture.encode(document,wire[32+size:],sequence)
+            if scenario=='image_only':wire=select_products(wire,1)
+            frames.append(wire)
+        write_recording(recording,frames)
+        namespace='/contract_'+scenario;observer=Observer(namespace);left=[]
+        qos=QoSProfile(depth=20,reliability=ReliabilityPolicy.BEST_EFFORT)
+        observer.node.create_subscription(Image,namespace+'/left/image_rect',left.append,qos)
+        log=open(root/(scenario+'.log'),'w+')
+        process=start(binary,namespace,log,source='replay',recording=recording,replay_loop=True,publish_left_rectified=True,**parameters)
+        try:
+            def ready():
+                s=latest_status(observer,namespace)
+                return s is not None and bool({v.key:v.value for v in s.values}.get('product_unavailable_reason')) and (
+                    len(left)>=3 and len(observer.messages['metadata'])>=3 if scenario=='image_only' else observer.ready())
+            observer.spin(ready)
+            values={v.key:v.value for v in latest_status(observer,namespace).values}
+            assert values['acquisition_errors']=='0','unsupported optional output broke usable replay products'
+            if scenario=='image_only':
+                assert not observer.messages['depth'] and values['depth_available']=='false'
+                assert values['left_rectified_available']=='true'
+            else:
+                assert not left and values['left_rectified_available']=='false'
+                assert values['depth_available']=='true',(scenario,values)
+        finally:stop(process);observer.node.destroy_node();log.close()
 def stop(process):
     os.killpg(process.pid,signal.SIGINT)
     try:process.wait(4)
@@ -256,5 +423,9 @@ def main():
         provisional_replay(binary,root)
         provisional_live(binary,root)
         invalid_replay_timeline(binary,root)
+        frame_pins_and_expiry(binary,root)
+        continuity_reconnect_and_idle(binary,root)
+        optional_subscriber_demand(binary,root)
+        replay_product_availability(binary,root)
     rclpy.shutdown();print('ROS DDS replay, lazy pause, simulation timeline, receipt time, duplicate rejection, point cloud and local reconnect contracts passed')
 if __name__=='__main__':main()

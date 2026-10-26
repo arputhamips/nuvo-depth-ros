@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain Id="any">
+    <General>
+      <!-- Fit an ordinary 1500-byte Ethernet MTU, including UDP/IP headers.
+           DDS fragments large images/clouds without relying on IP reassembly. -->
+      <MaxMessageSize>1400B</MaxMessageSize>
+      <FragmentSize>1200B</FragmentSize>
+    </General>
+  </Domain>
+</CycloneDDS>

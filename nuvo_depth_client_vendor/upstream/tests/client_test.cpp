@@ -73,11 +73,23 @@ int main(int argc, char** argv) {
     } else if (mode == "replay" || mode == "terminal-replay" ||
                mode == "eof-replay")
       source = replay_source(argv[2]);
-    else if (mode == "decode" || mode == "override") {
+    else if (mode == "decode" || mode == "override" || mode == "validate") {
       std::ifstream input(argv[2], std::ios::binary);
       std::vector<char> data((std::istreambuf_iterator<char>(input)), {});
       auto frame = decode_frame(
           {reinterpret_cast<const std::byte*>(data.data()), data.size()});
+      if (mode == "validate") {
+        if (argc > 3 && std::string(argv[3]) == "constraints" &&
+            (!frame.depth_constraints || !frame.disparity_constraints ||
+             frame.depth_constraints->maximum_m != 20.0 ||
+             frame.disparity_constraints->accepted_min_px != 0.5 ||
+             frame.disparity_constraints->accepted_max_px != 64.0 ||
+             frame.disparity_constraints->quantization_px != 0.0625 ||
+             frame.disparity_constraints->valid_roi.width != 2))
+          return 1;
+        std::cout << frame.identity.capture_sequence << '\n';
+        return 0;
+      }
       if (mode == "override") {
         const auto original_authority = frame.calibration_authority;
         apply_calibration_override(frame, load_calibration_override(argv[3]));

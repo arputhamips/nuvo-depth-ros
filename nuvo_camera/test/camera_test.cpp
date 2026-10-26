@@ -20,7 +20,7 @@ class CameraParameters : public ::testing::Test {
 };
 
 TEST_F(CameraParameters, RejectsNonfiniteTimingParametersBeforeAcquisition) {
-  for (const auto* name : {"cadence_hz", "replay_rate", "maximum_frame_age_s"})
+  for (const auto* name : {"cadence_hz", "replay_rate", "maximum_frame_age_s", "clock_jump_threshold_s"})
     for (const auto value : {std::numeric_limits<double>::quiet_NaN(),
                              std::numeric_limits<double>::infinity(),
                              -std::numeric_limits<double>::infinity(), 0., -1.})
@@ -28,6 +28,25 @@ TEST_F(CameraParameters, RejectsNonfiniteTimingParametersBeforeAcquisition) {
                        options({rclcpp::Parameter(name, value)})),
                    std::invalid_argument)
           << name << "=" << value;
+}
+
+TEST_F(CameraParameters, ValidatesPinsAndExplicitRecoveryPolicies) {
+  for (const auto& parameter : {
+           rclcpp::Parameter("expected_device_uuid", "123"),
+           rclcpp::Parameter("expected_calibration_sha256", std::string(64, '0')),
+           rclcpp::Parameter("clock_jump_policy", "ignore"),
+           rclcpp::Parameter("acquisition_restart_policy", "reset"),
+           rclcpp::Parameter("right_frame_id", "/invalid")})
+    EXPECT_THROW(nuvo_camera::NuvoCamera(options({parameter})), std::invalid_argument);
+  nuvo_camera::NuvoCamera node;
+  EXPECT_EQ(node.get_parameter("expected_device_uuid").as_string(), "");
+  EXPECT_EQ(node.get_parameter("expected_calibration_sha256").as_string(), "");
+  EXPECT_EQ(node.get_parameter("clock_jump_policy").as_string(), "remap");
+  EXPECT_EQ(node.get_parameter("acquisition_restart_policy").as_string(), "accept");
+  EXPECT_FALSE(node.get_parameter("allow_provisional_calibration").as_bool());
+  EXPECT_FALSE(node.get_parameter("publish_left_rectified").as_bool());
+  EXPECT_FALSE(node.get_parameter("publish_right_rectified").as_bool());
+  EXPECT_FALSE(node.get_parameter("publish_disparity").as_bool());
 }
 
 TEST_F(CameraParameters, RejectsIncompatibleTimeSources) {

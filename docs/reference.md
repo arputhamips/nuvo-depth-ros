@@ -13,11 +13,16 @@ The socket carries control messages and frame descriptors. Local acquisition
 uses no HTTP, TLS, frame-file polling or gateway, and a failed local connection
 retries the local socket.
 
-Mount the entire runtime directory to follow socket replacement while that
-directory remains in place. Stopping or restarting the native service can
-remove and recreate `/run/nuvo-depth`, leaving an existing container bound to
-the old directory. After native capture is active again, recreate the camera
-container from the repository root:
+Mount the entire runtime directory to follow socket replacement. Updated native
+full and minimal service units use `RuntimeDirectoryPreserve=yes`, keeping the
+directory inode across restart, stop/start and failed startup. Their cleanup
+removes generated socket/status/snapshot artifacts while preserving calibration
+and persistent state.
+
+Older installed service units can remove and recreate `/run/nuvo-depth`, leaving
+an existing container bound to the old directory. After upgrading from those
+units, or after manual runtime-directory replacement, wait for native capture
+to be active and recreate the camera container once from the repository root:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --force-recreate camera
@@ -28,9 +33,20 @@ camera-device mount nor shared `/dev/shm`. Compose uses host networking for ROS
 DDS and host IPC for DDS shared memory; these are separate from Nuvo's `memfd`
 handoff. Keep networking available for DDS and SSH.
 
+Stop the adapter, or start it again later:
+
+```bash
+sudo docker compose --env-file docker/.env -f docker/compose.yaml stop
+sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d
+```
+
 The SDK maps the frame without copying its pixel buffer, but the complete path
-also fills ROS-owned image arrays and may serialize/copy through DDS. The ROS
-subscription requests depth and validity with no encoded-preview demand.
+also fills ROS-owned image arrays and may serialize/copy through DDS. The default
+ROS subscription requests depth and validity with no encoded-preview demand.
+Enabled optional products are requested only while their image, CameraInfo or
+disparity publishers have subscribers. Disparity also requests native validity
+so rejected samples can be masked. Changing demand reconnects the live
+subscription without resetting identity or clock policy state.
 
 For a new headless appliance, Nuvo Depth's minimal installation omits the
 gateway, web console and encoder while keeping the native data socket. On an
@@ -157,9 +173,11 @@ recordings may need the geometry override below.
 ## Beta 8 and older recordings
 
 CameraInfo and XYZ require the calibration for the actual matching grid. Public
-camera beta 8 and some older recordings do not transport that geometry. They
-need an explicit `calibration_override_file`, even when depth is available.
-Missing geometry produces a diagnostic and prevents measurement publication.
+camera beta 8 and some older recordings do not transport that geometry. Depth
+and XYZ then need an explicit `calibration_override_file`. Missing matching
+geometry blocks those outputs. Rectified images require producer image-grid
+geometry, which this matching-only override cannot supply; disparity also needs
+the producer's validated range, quantization and ROI declarations.
 
 This adapter has no automatic geometry-override exporter. Prepare the geometry
 from the calibration bundle actually used for that capture, accounting for the
@@ -200,6 +218,58 @@ five seconds. Blocked replay keeps its playback pacing. Existing validated
 per-unit bundles remain authoritative in the native runtime; a ROS upgrade does
 not require recalibration.
 
+## Identity, calibration and clock policies
+
+These startup parameters apply to every observed capture. Geometry overrides
+and identity pins serve separate purposes: an override supplies missing matching
+geometry; a pin restricts which device or calibration can publish.
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `expected_device_uuid` | empty | Optional nonzero 32-character lowercase hex device identity |
+| `expected_calibration_sha256` | empty | Optional nonzero 64-character lowercase hex calibration identity |
+| `acquisition_restart_policy` | `accept` | `accept` allows a new live run or advancing capture/configuration epoch; `reject` latches publication off |
+| `clock_jump_policy` | `remap` | Local-boottime policy: `remap`, `reject` or `latch` |
+| `clock_jump_threshold_s` | `0.1` | Positive finite change in the system-to-boottime offset that counts as a jump |
+| `maximum_frame_age_s` | `1.0` | Freshness limit, greater than 0 and at most 30 seconds |
+
+Pins remain empty in the default configuration. Fill the intended identities in
+the [strict example](../nuvo_bringup/config/strict.yaml) before deploying it.
+A mismatch blocks that capture. A new qualifying capture can recover a pin
+mismatch; changing the connected device after continuity is established latches
+an identity fault. Existing validated calibration bundles remain authoritative.
+
+Live run/capture/configuration identity is retained across reconnects and lazy
+pauses. Duplicate captures, regressing epochs/sequences and regressing source
+time are rejected. Sequence resets require an advancing capture epoch or a new
+run. Local-boottime capture time must still advance across runs in the same host
+boot. Receipt mode allows a new remote run to begin with a reset source clock.
+
+Clock policies apply to local `local_boottime` mapping. `remap` accepts the new
+offset; `reject` blocks the jump and can recover on a new valid capture with a
+stable clock; `latch` blocks publication until the node restarts. Device-change
+and `acquisition_restart_policy: reject` faults also require a node restart.
+Investigate and reaffirm the configured identities before restarting. A transport
+reconnect alone does not clear a latch. A latched fault releases live acquisition
+demand rather than keeping matching active behind blocked output. Replay
+segments and loops use their own
+timeline handling rather than the live restart policy.
+
+## Validated measurement input
+
+The C++ SDK checks typed producer depth/disparity constraints before ROS
+conversion. It rejects unknown validity codes, non-NaN invalid depth, infinite
+measurements, producer stereo-configuration errors and accepted samples outside
+declared depth/disparity ranges or valid ROI. When both depth and disparity and
+matching geometry are present, it verifies their calibrated optical-axis Z
+relationship, including the principal-point offset.
+
+Depth-only acquisition still requests only depth and validity. Older recordings
+can omit constraint declarations; the SDK cannot check limits or geometry that
+were never supplied. Image-only acquisition has no measurement-constraint
+prerequisite. These checks validate the transported contract and do not establish
+physical distance accuracy.
+
 ## Image, cloud and metadata semantics
 
 Depth is optical-axis Z in metres (`32FC1`). Samples with a validity code other
@@ -217,6 +287,30 @@ optical frame. XYZ is computed only while `points` has subscribers. The default
 `point_stride: 2` samples every second pixel in each dimension; the accepted
 range is 1–16. Invalid XYZ values are NaN.
 
+Optional rectified-image and disparity publishers are disabled by default:
+
+| Startup flag | Topics | Contract |
+|---|---|---|
+| `publish_left_rectified` | `left/image_rect`, `left/camera_info` | Producer image grid; `mono8`, `rgb8` or `bgr8` without color conversion |
+| `publish_right_rectified` | `right/image_rect`, `right/camera_info` | Right image grid and calibrated right projection, including stereo translation |
+| `publish_disparity` | `disparity` | `stereo_msgs/msg/DisparityImage` on the matching grid |
+
+The left image, depth and disparity use `frame_id`. Right images use
+`right_frame_id`, whose executable default is `nuvo_right_rectified_optical`.
+Image CameraInfo comes from actual producer image geometry, never from the
+matching-only override or raw sensor intrinsics. Image and matching resolutions
+can differ. Associated products retain the same capture timestamp and identity;
+their dimensions and optical frames describe their respective grids.
+
+Disparity is the native value minus `(cx_left - cx_right)`, following the ROS
+stereo convention. Its `f` and `t` come from matching focal length and calibrated
+baseline; min/max use the same offset, `delta_d` preserves native quantization
+and `valid_window` preserves native ROI. Disparity publication requests the
+matching validity plane and emits NaN for every code other than `1`, including
+finite native disparities rejected by a later depth check. It preserves native
+NaNs and does not change the SDK's immutable native buffers. Missing required
+geometry, validity or producer constraints blocks the requested conversion.
+
 [FrameMetadata](../nuvo_camera_msgs/msg/FrameMetadata.msg) accompanies each
 published measurement and retains:
 
@@ -231,8 +325,8 @@ describes that local sampling uncertainty, not camera hardware accuracy; it is
 boottime namespace; explicit Docker time offsets are rejected.
 
 Local frames older than `maximum_frame_age_s` (default 1 second) or more than
-5 ms in the future are rejected. System-clock jumps over 100 ms are reported
-and remapped. `timestamp_mode: receipt` is also available for local acquisition
+5 ms in the future are rejected. Clock jumps follow the configured policy above.
+`timestamp_mode: receipt` is also available for local acquisition
 when arrival stamps are explicitly wanted; the capture-age check applies to
 `local_boottime` mode.
 
@@ -255,11 +349,64 @@ DDS cannot recover captures already skipped by the native best-effort source.
 It defaults to `best_effort`. Local IPC accepts `auto` or `best_effort` and
 delivers best effort; `exact` is HTTPS-only and is rejected for local acquisition.
 
-`/diagnostics` reports connection/recovery status, publication counts, acquisition
-errors, stale frames, duplicates and the timestamp mode. Diagnostics alone do
-not create acquisition demand when `lazy: true`. Live transport failures recreate
-the same source with bounded retry backoff; local acquisition never falls back
-to HTTPS. Malformed frames are rejected.
+## Diagnostics and availability
+
+`/diagnostics` publishes a reliable status every second. Its status name is the
+node's fully qualified name. Diagnostics alone do not create acquisition demand
+when `lazy: true`. Live transport failures recreate the same source with bounded
+retry backoff; local acquisition never falls back to HTTPS.
+
+| Diagnostic values | Interpretation |
+|---|---|
+| `source_age_s`, `acquisition_age_s`, `source_age_available` | Capture age from local boottime; both ages are `-1` and availability is false for receipt/replay |
+| `observation_age_s`, `publication_age_s` | Steady-clock age of the last new observation and successful publication; `-1` before one exists |
+| `output_available`, `depth_available`, `left_rectified_available`, `right_rectified_available`, `disparity_available` | Fresh publication availability, with per-product flags |
+| `calibration_qualified`, `calibration_sha256`, `calibration_authority` | Native authority and identity; provisional remains unqualified even with preview enabled |
+| `depth_minimum_m`, `depth_maximum_m`, `disparity_accepted_min_px`, `disparity_accepted_max_px`, `disparity_quantization_px` | Producer constraints when present; missing declarations are not invented |
+| `identity_fault`, `clock_fault`, `fault_latched`, `reject_reason` | Current qualification or policy failure |
+| `observed_*`, `published_*` | Latest observed and published device/run/capture identity |
+| `published_frames`, `acquisition_errors`, `duplicate_frames`, `stale_frames`, `rejected_frames`, `acquisition_restarts`, `clock_jumps` | Counters for diagnosis |
+
+No-frame waits and duplicates do not refresh successful publication. Availability
+expires after `maximum_frame_age_s`, evaluated on the diagnostic timer; consumers
+still need their own deadlines. `calibration_qualified` describes native authority,
+not whether a configured hash pin matched. A running process, fresh diagnostics
+or accepted provisional output does not establish robot health. See the
+[integration guide](integration.md) for commissioning and downstream checks.
+
+## DDS transport
+
+The Docker image and Compose setup select Cyclone DDS with
+`CYCLONEDDS_URI=file:///ws/install/share/nuvo_bringup/config/cyclonedds.xml`.
+The node remains RMW-agnostic: deployments can override `RMW_IMPLEMENTATION`
+and supply an independently qualified middleware/transport profile.
+The [supplied profile](../nuvo_bringup/config/cyclonedds.xml) sets
+`MaxMessageSize` to `1400B` and `FragmentSize` to `1200B`. This lets DDS fragment
+large images and clouds while keeping UDP datagrams within an ordinary
+1500-byte Ethernet MTU, avoiding dependence on IP reassembly. Interface
+selection, discovery and socket buffers retain their defaults.
+
+For a source workspace, set the profile before starting ROS participants, from
+the repository root after sourcing the workspace:
+
+```bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
+```
+
+Use an absolute profile path without spaces. Apply the profile to publishers
+and consumers during initial qualification. The host full-size test passed
+with automatic interface selection and original `rmem_max`/`wmem_max` values of
+212992; a permanent host buffer increase is not part of this fix. Network
+discovery, firewalls, effective MTU and transport selection still need checking
+for each deployment. This DDS configuration is separate from the local Nuvo
+Unix-socket/memfd acquisition path.
+
+An existing robot can retain Fast DDS with its independently qualified profile.
+This record does not qualify Fast DDS; no Fast DDS example is supplied.
+
+The [validation record](validation-20261026.md) distinguishes confirmed host
+transport results from pending final-container and ARM64 checks.
 
 ## Source build and development
 
@@ -272,7 +419,7 @@ sudo apt update
 sudo apt install -y build-essential cmake ninja-build \
   python3-colcon-common-extensions nlohmann-json3-dev libboost-system-dev \
   libssl-dev libc-ares-dev ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs \
-  ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs \
+  ros-jazzy-diagnostic-msgs ros-jazzy-stereo-msgs ros-jazzy-rosgraph-msgs \
   ros-jazzy-ament-cmake-gtest ros-jazzy-rmw-cyclonedds-cpp
 source /opt/ros/jazzy/setup.bash
 MAKEFLAGS=-j2 colcon build --executor sequential \
@@ -280,6 +427,8 @@ MAKEFLAGS=-j2 colcon build --executor sequential \
 colcon test --return-code-on-test-failure
 colcon test-result --verbose
 source install/setup.bash
+export RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
 ros2 launch nuvo_bringup camera.launch.py
 ```
 
@@ -288,8 +437,13 @@ executable is `nuvo_camera_node`. Driver parameters are startup-only. Connecting
 registers product demand without changing exposure, stereo, calibration or
 encoder settings.
 
-To omit HTTPS support, add `-DNUVO_CLIENT_WITH_HTTPS=OFF` to the CMake arguments.
+For a local/replay-only source build, omit `libboost-system-dev`, `libssl-dev`
+and `libc-ares-dev` from the dependency command and add
+`-DNUVO_CLIENT_WITH_HTTPS=OFF` to the CMake arguments.
 For Docker use `sudo docker compose --env-file docker/.env -f docker/compose.yaml build --build-arg NUVO_CLIENT_WITH_HTTPS=OFF`.
+The Docker flag omits explicit HTTPS dependency requests from both build and
+runtime stages and removes the client's direct HTTPS library links. The ROS base
+image can still contain TLS libraries through its own dependencies.
 Docker's compiler parallelism defaults to two jobs and can be changed with
 `--build-arg BUILD_JOBS=4`.
 
