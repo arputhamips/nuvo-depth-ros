@@ -38,7 +38,12 @@ RUN dpkg-query -W -f='${Package}\t${Version}\n' > /tmp/base-packages.tsv \
     ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-diagnostic-msgs \
     ros-jazzy-stereo-msgs ros-jazzy-rosgraph-msgs ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
-LABEL org.nuvo.client.https="${NUVO_CLIENT_WITH_HTTPS}"
+ARG VCS_REF=unknown
+LABEL org.nuvo.client.https="${NUVO_CLIENT_WITH_HTTPS}" \
+      org.opencontainers.image.source="https://github.com/arputhamips/nuvo-depth-ros" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later"
+COPY LICENSE NOTICE /usr/share/doc/nuvo-depth-ros/
 RUN mkdir -p /usr/share/nuvo-build \
     && mv /tmp/base-packages.tsv /usr/share/nuvo-build/runtime-base-packages.tsv \
     && mv /tmp/requested-https-packages.txt /usr/share/nuvo-build/runtime-requested-https-packages.txt

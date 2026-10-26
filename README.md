@@ -8,13 +8,17 @@ Applications can use standard ROS messages without the optional Nuvo metadata.
 The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
-This is a source package, with no released ROS APT package or prebuilt image.
+This is a development driver with no released ROS APT package.
+A [manually published Docker trial image](docs/docker-image.md) is provided for
+Pi ARM64 and Linux PC AMD64; local source builds remain supported.
 [Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
 build/runtime checks. Pi camera operation, sustained performance and metric
 accuracy still need qualification.
 New to the driver? Follow [Use Nuvo Depth in your ROS project](docs/using-in-robot.md)
 for custom namespaces, frames, topic remaps, a Python subscriber, RViz and multiple
 cameras. Use the [integration guide](docs/integration.md) for commissioning.
+
+See [how the same-Pi, Ethernet and USB-C paths communicate](docs/connections.md).
 
 Choose the [Pi Docker setup](#quick-start), an [Ubuntu Jazzy source build](docs/reference.md#source-build-and-development),
 a [remote HTTPS camera](docs/reference.md#remote-https), or [recording replay](docs/reference.md#nvr1-replay).
@@ -68,7 +72,16 @@ need the geometry override, provisional preview or point clouds. Its directory
 is mounted at `/config`: a prepared host file `nuvo_bringup/config/geometry.json`
 uses `calibration_override_file: /config/geometry.json` in the YAML.
 
-Build the image and start the driver:
+For the prebuilt trial, add
+`NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial` to `docker/.env`, then:
+
+```bash
+sudo docker compose --env-file docker/.env -f docker/compose.yaml pull
+sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --no-build
+```
+
+See [trial image details and remote-camera setup](docs/docker-image.md). To build
+from this checkout instead, leave `NUVO_IMAGE` unset and run:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml config --quiet

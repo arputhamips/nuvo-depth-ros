@@ -7,20 +7,33 @@ on:
       architecture:
         description: Native runner architecture (ARM64 qualification is manual)
         type: choice
-        options: [amd64, arm64]
+        options: [amd64, arm64, both]
         default: amd64
+      publish_image:
+        description: Publish the tested AMD64 + ARM64 trial image to GHCR (requires both)
+        type: boolean
+        default: false
 permissions:
   contents: read
-env:
-  NUVO_TEST_ARCH: ${{ github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && 'arm64' || 'amd64' }}
 jobs:
   jazzy:
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        architecture: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.architecture == 'both' && '["amd64","arm64"]' || github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && '["arm64"]' || '["amd64"]') }}
+    env:
+      NUVO_TEST_ARCH: ${{ matrix.architecture }}
+    runs-on: ${{ matrix.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: ros:jazzy-ros-base@sha256:103b6c417973394659af6804d4917cd489b91e5ed22eb7bef263025a3bed2410
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with: {persist-credentials: false}
+      - name: Validate publication request
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_image
+        env:
+          SELECTED_ARCH: ${{ inputs.architecture }}
+        run: test "$SELECTED_ARCH" = both
       - name: Install declared development dependencies
         run: |
           apt-get update
@@ -57,13 +70,15 @@ jobs:
             nuvo_depth_client_vendor/upstream/SOURCE-MANIFEST.json
           if-no-files-found: error
   deployment:
-    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    runs-on: ${{ matrix.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         https: ['ON', 'OFF']
+        architecture: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.architecture == 'both' && '["amd64","arm64"]' || github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && '["arm64"]' || '["amd64"]') }}
     env:
+      NUVO_TEST_ARCH: ${{ matrix.architecture }}
       NUVO_TEST_IMAGE: nuvo-depth-ros:ci-${{ matrix.https }}
       NUVO_TEST_OUTPUT_DIR: ${{ github.workspace }}/output/deployment
       ROS_DOMAIN_ID: '92'
@@ -92,7 +107,7 @@ jobs:
           test "$(dpkg --print-architecture)" = "$NUVO_TEST_ARCH"
           colcon build --packages-select nuvo_camera_msgs --executor sequential
           mkdir -p "$NUVO_TEST_OUTPUT_DIR"
-          docker build --platform "linux/$NUVO_TEST_ARCH" --progress plain --build-arg NUVO_CLIENT_WITH_HTTPS=${{ matrix.https }} -f docker/Dockerfile -t "$NUVO_TEST_IMAGE" . \
+          docker build --platform "linux/$NUVO_TEST_ARCH" --progress plain --build-arg NUVO_CLIENT_WITH_HTTPS=${{ matrix.https }} --build-arg VCS_REF="$GITHUB_SHA" -f docker/Dockerfile -t "$NUVO_TEST_IMAGE" . \
             2>&1 | tee "$NUVO_TEST_OUTPUT_DIR/docker-build.log"
           test "$(docker image inspect "$NUVO_TEST_IMAGE" --format '{{.Architecture}}')" = "$NUVO_TEST_ARCH"
       - name: Native host socket and clock to unprivileged ROS container
@@ -104,8 +119,11 @@ jobs:
           python3 test/container_host_ipc.py
           python3 test/fullsize.py --container
           python3 test/docker_dependencies.py
+          if [[ '${{ matrix.https }}' == ON ]]; then
+            python3 test/https_container.py
+          fi
       - name: Collect reviewable ARM64 runtime bundle
-        if: always() && github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64'
+        if: always() && github.event_name == 'workflow_dispatch' && matrix.architecture == 'arm64'
         shell: bash
         run: |
           mkdir -p "$NUVO_TEST_OUTPUT_DIR"
@@ -137,4 +155,75 @@ jobs:
             output/deployment/
             log/
             nuvo_depth_client_vendor/upstream/SOURCE-MANIFEST.json
+          if-no-files-found: error
+
+      - name: Save tested image for the manual publication job
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_image && matrix.https == 'ON'
+        shell: bash
+        run: |
+          mkdir -p output/image
+          docker save "$NUVO_TEST_IMAGE" | gzip -1 > output/image/image.tar.gz
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: github.event_name == 'workflow_dispatch' && inputs.publish_image && matrix.https == 'ON'
+        with:
+          name: tested-image-${{ matrix.architecture }}
+          path: output/image/image.tar.gz
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+  publish-image:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish_image && inputs.architecture == 'both'
+    needs: [jazzy, deployment]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    concurrency:
+      group: publish-jazzy-trial
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with: {persist-credentials: false}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: tested-image-*
+          path: images
+      - name: Publish the tested images and multi-platform trial manifest
+        shell: bash
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          registry_image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          trap 'docker logout ghcr.io' EXIT
+          for architecture in amd64 arm64; do
+            docker load --input "images/tested-image-$architecture/image.tar.gz"
+            test "$(docker image inspect nuvo-depth-ros:ci-ON --format '{{.Architecture}}')" = "$architecture"
+            test "$(docker image inspect nuvo-depth-ros:ci-ON --format '{{index .Config.Labels "org.opencontainers.image.revision"}}')" = "$GITHUB_SHA"
+            docker tag nuvo-depth-ros:ci-ON "$registry_image:sha-$GITHUB_SHA-$architecture"
+            docker push "$registry_image:sha-$GITHUB_SHA-$architecture"
+          done
+          docker buildx imagetools create \
+            --tag "$registry_image:sha-$GITHUB_SHA" --tag "$registry_image:jazzy-trial" \
+            "$registry_image:sha-$GITHUB_SHA-amd64" "$registry_image:sha-$GITHUB_SHA-arm64"
+          docker buildx imagetools inspect "$registry_image:sha-$GITHUB_SHA" | tee image-manifest.txt
+          git archive --format=tar.gz --prefix=nuvo-depth-ros/ HEAD > nuvo-depth-ros-source.tar.gz
+          sha256sum nuvo-depth-ros-source.tar.gz > SHA256SUMS
+          {
+            echo '### Nuvo Depth ROS Jazzy trial image'
+            echo "Source commit: $GITHUB_SHA"
+            echo "Pull: docker pull $registry_image:jazzy-trial"
+            echo "Pinned commit image: $registry_image:sha-$GITHUB_SHA"
+            echo 'Platforms: linux/amd64 and linux/arm64. Synthetic CI checks are not Pi camera qualification.'
+            echo 'For a new GHCR package, set package visibility to Public and verify an anonymous pull.'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: trial-image-provenance
+          path: |
+            image-manifest.txt
+            nuvo-depth-ros-source.tar.gz
+            SHA256SUMS
           if-no-files-found: error

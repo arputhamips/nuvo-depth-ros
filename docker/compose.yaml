@@ -1,5 +1,6 @@
 services:
   camera:
+    image: "${NUVO_IMAGE:-nuvo-depth-ros:local}"
     build:
       context: ..
       dockerfile: docker/Dockerfile

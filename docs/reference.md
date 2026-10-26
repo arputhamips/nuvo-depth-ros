@@ -77,6 +77,10 @@ with either package profile.
 
 ## Remote HTTPS
 
+See [connection paths](connections.md) for Ethernet and provisioned USB Ethernet,
+and the [remote Docker setup](docker-image.md#remote-ethernet-or-provisioned-usb-ethernet)
+for ready-to-use mounts and credential ownership.
+
 Remote acquisition requires the Nuvo gateway on the camera host. Save a separate
 configuration file, for example `/path/to/https.yaml`:
 
@@ -107,9 +111,9 @@ depth and validity without changing camera settings.
 
 For Docker, mount these files read-only and use their container paths in the
 configuration. The supplied image runs as UID 10001, so a host-owned `0600` token
-also needs ownership that lets that UID read it. The supplied Compose file only
-mounts the runtime socket directory and configuration directory; add the secret
-mounts when using HTTPS.
+also needs ownership that lets that UID read it. The same-Pi `compose.yaml` mounts the runtime and configuration directories.
+Use `compose.remote.yaml` for a remote camera; it mounts credentials and runs
+with their owner's numeric UID/GID instead.
 
 DNS and hosts-file names are supported. If the host resolves an mDNS name that
 the client cannot resolve, add `connect_address: 192.0.2.10` with the camera's

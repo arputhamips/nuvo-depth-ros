@@ -1,0 +1,21 @@
+/**:
+  ros__parameters:
+    source: https
+    # Replace with the camera certificate's hostname and gateway port.
+    endpoint: https://camera.example:7443
+    timestamp_mode: receipt
+    ca_file: /credentials/nuvo-ca.pem
+    credential_file: /credentials/nuvo-token
+    # If hostname resolution is unavailable, keep endpoint's certificate name
+    # and set connect_address to the camera's real Ethernet/USB Ethernet IP.
+    connect_address: ""
+    frame_id: nuvo_front_left_rectified_optical
+    right_frame_id: nuvo_front_right_rectified_optical
+    cadence_hz: 10.0
+    delivery: best_effort
+    allow_provisional_calibration: false
+    publish_points: false
+    lazy: true
+    point_stride: 2
+    qos_depth: 1
+    reliability: best_effort
