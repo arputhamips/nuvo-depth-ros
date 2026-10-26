@@ -8,6 +8,24 @@ the camera host. The trial image name is:
 ghcr.io/arputhamips/nuvo-depth-ros:jazzy-trial
 ```
 
+The first public trial was published on **26 October 2026** from
+[`c326cfb`](https://github.com/arputhamips/nuvo-depth-ros/commit/c326cfb8e659619aebf3eaf983782ae4c48db0fc).
+The [manual validation/publication run](https://github.com/arputhamips/nuvo-depth-ros/actions/runs/40391844367)
+passed all six source/deployment jobs before publication. Both architectures
+passed the remote HTTPS container check as UID 1001, including session cleanup.
+An anonymous AMD64 pull and launch-argument check then passed from a separate
+Docker client with an empty credential configuration. Anonymous manifest lookup
+confirmed both platforms. No GitHub login is needed to pull this image.
+
+For the exact tested multi-platform image, use:
+
+```bash
+docker pull ghcr.io/arputhamips/nuvo-depth-ros@sha256:ee34359e6c9d42a5fdc4fb9227f037ad7259e201575789202690e8d523662027
+```
+
+Local evidence is retained under `output/audit/container-trial/` (ignored by Git),
+including the anonymous pull, published manifest and hosted HTTPS reports.
+
 The manual publication workflow builds and tests `linux/arm64` on an ARM64 runner
 and `linux/amd64` on an AMD64 runner. The shared image name selects the matching
 architecture automatically. The image has HTTPS enabled and also supports local
