@@ -48,7 +48,7 @@ def isolated_acquisition(image, image_id, runtime_uid, group, root, output):
             while time.monotonic() < deadline:
                 assert process.poll() is None, 'isolated ROS container exited during acquisition'
                 if (peer.requests >= 3 and
-                        'First associated depth frame published' in log_path.read_text()):
+                        'First associated measurement frame published' in log_path.read_text()):
                     report['publication_observed'] = True
                     break
                 time.sleep(.05)

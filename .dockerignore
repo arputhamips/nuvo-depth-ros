@@ -9,3 +9,7 @@ output
 *.pem
 .env
 credentials
+
+**/.env
+**/*.pem
+**/credentials

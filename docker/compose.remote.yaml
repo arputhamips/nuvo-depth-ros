@@ -1,0 +1,18 @@
+services:
+  camera:
+    image: "${NUVO_IMAGE:-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0}"
+    # Linux host networking exposes ROS DDS on the computer running this driver.
+    network_mode: host
+    # Match the owner of the host's 0600 token file. No root runtime is needed.
+    user: "${NUVO_UID:?Set NUVO_UID to id -u}:${NUVO_GID:?Set NUVO_GID to id -g}"
+    volumes:
+      - ../nuvo_bringup/config:/config:ro
+      - ./credentials:/credentials:ro
+    environment:
+      ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
+      ROS_LOG_DIR: /tmp/nuvo-ros-log
+      RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      CYCLONEDDS_URI: "${CYCLONEDDS_URI:-file:///ws/install/share/nuvo_bringup/config/cyclonedds.xml}"
+    command: ["ros2", "launch", "nuvo_bringup", "camera.launch.py", "namespace:=${NUVO_NAMESPACE:-nuvo/front}", "config:=${NUVO_CONFIG:-/config/remote.yaml}"]
+    init: true
+    restart: unless-stopped

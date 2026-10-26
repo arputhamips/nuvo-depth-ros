@@ -1,5 +1,6 @@
 services:
   camera:
+    image: "${NUVO_IMAGE:-nuvo-depth-ros:local}"
     build:
       context: ..
       dockerfile: docker/Dockerfile
@@ -20,6 +21,6 @@ services:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
       CYCLONEDDS_URI: "${CYCLONEDDS_URI:-file:///ws/install/share/nuvo_bringup/config/cyclonedds.xml}"
-    command: ["ros2", "launch", "nuvo_bringup", "camera.launch.py", "config:=/config/camera.yaml"]
+    command: ["ros2", "launch", "nuvo_bringup", "camera.launch.py", "namespace:=${NUVO_NAMESPACE:-nuvo/front}", "config:=${NUVO_CONFIG:-/config/camera.yaml}"]
     init: true
     restart: unless-stopped

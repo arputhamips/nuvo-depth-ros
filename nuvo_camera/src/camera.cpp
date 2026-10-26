@@ -533,7 +533,7 @@ class NuvoCamera::Impl {
       available_products_ = available;
     }
     if (++published_ == 1)
-      RCLCPP_INFO(node_.get_logger(), "First associated depth frame published");
+      RCLCPP_INFO(node_.get_logger(), "First associated measurement frame published");
     last_stamp_ = stamp;
     state(frame.calibration_authority == 0
               ? "streaming with provisional calibration"

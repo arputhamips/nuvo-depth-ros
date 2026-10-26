@@ -3,6 +3,7 @@
 Use this guide when replacing an existing camera adapter or connecting a new
 consumer. The [README](../README.md) covers installation; the
 [reference](reference.md) defines source, timestamp and measurement contracts.
+For a first robot integration, start with [Use Nuvo Depth in your ROS project](using-in-robot.md).
 Keep robot mounting transforms and application decisions in the downstream
 integration.
 
@@ -116,9 +117,10 @@ ros2 launch nuvo_bringup camera.launch.py \
   namespace:=sensors/depth config:=/path/to/commissioned.yaml
 ```
 
-For the supplied Compose deployment, save it under `nuvo_bringup/config`, use
-its `/config/...` path and chosen namespace in the service's launch command,
-then recreate the service with the README's explicit environment-file options.
+For the supplied Compose deployment, save it under `nuvo_bringup/config`, set
+`NUVO_CONFIG=/config/your-file.yaml` and `NUVO_NAMESPACE=sensors/depth` in
+`docker/.env`, then recreate the service with the README's explicit
+environment-file options.
 Driver parameters are fixed at startup.
 
 Strict restart and clock latches require a node restart after investigation.
