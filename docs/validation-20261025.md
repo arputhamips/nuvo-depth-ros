@@ -46,6 +46,12 @@ The host/container integration uses a native socket fixture rather than cameras;
 it checks the OS/container/DDS boundary and numeric conversion, not scene depth
 quality or physical sensor timing.
 
+The reconnect test replaces the socket inode within a retained runtime
+directory. It does not qualify systemd `RuntimeDirectory` deletion and
+recreation. After an actual native service restart, wait for native capture to
+be active and [recreate the camera container](reference.md#local-only-operation)
+to refresh its runtime-directory bind mount.
+
 ## Environment and limits
 
 Validation ran on Linux amd64 in Ubuntu 24.04 under WSL2 and an Ubuntu Jazzy
