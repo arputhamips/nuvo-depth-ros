@@ -1,13 +1,17 @@
 # Nuvo Depth ROS 2
 
 ROS 2 Jazzy driver that publishes [Nuvo Depth](https://github.com/arputhamips/nuvo-depth)
-output as depth images, validity, CameraInfo and optional XYZ point clouds.
+output as depth images, validity and CameraInfo, with optional XYZ, rectified
+stereo images and disparity.
 The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
 This is a source package, with no released ROS APT package or prebuilt image.
-[Host/container tests](docs/validation-20261025.md) passed; ARM64 builds, Pi camera
-operation, sustained performance and metric accuracy still need qualification.
+[Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
+build/runtime checks. Pi camera operation, sustained performance and metric
+accuracy still need qualification.
+Use the [integration guide](docs/integration.md) when replacing an existing
+camera adapter or commissioning a downstream consumer.
 
 ## Quick start
 
@@ -67,6 +71,8 @@ sudo docker compose --env-file docker/.env -f docker/compose.yaml logs --tail=50
 The build runs colcon tests and defaults to two compiler jobs. The container
 runs unprivileged, using the saved `nuvo-video` group and a read-only mount of
 `/run/nuvo-depth`; camera-device mounts and privileged mode are unnecessary.
+The supplied [Cyclone DDS profile](docs/reference.md#dds-transport) keeps UDP
+datagrams within a standard 1500-byte MTU for image and cloud delivery.
 
 Receive a depth frame using the container's ROS environment:
 
@@ -83,13 +89,6 @@ measurement subscriber starts acquisition. Listing topics or reading diagnostics
 does not request frames; demand is released after the last subscriber leaves.
 The command uses best-effort QoS to match the publisher.
 
-Stop it, or start it again later:
-
-```bash
-sudo docker compose --env-file docker/.env -f docker/compose.yaml stop
-sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d
-```
-
 ## Configuration
 
 Parameters in [`camera.yaml`](nuvo_bringup/config/camera.yaml) are fixed at
@@ -103,10 +102,17 @@ sudo docker compose --env-file docker/.env -f docker/compose.yaml restart camera
 | --- | --- | --- |
 | `cadence_hz` | `10.0` | Requested delivery cadence, not a guaranteed frame rate. |
 | `publish_points` | `false` | Enable XYZ; conversion runs only with cloud subscribers. |
+| `publish_left_rectified` / `publish_right_rectified` | `false` / `false` | Enable rectified image and CameraInfo publishers; native products are requested only with subscribers. |
+| `publish_disparity` | `false` | Enable calibrated `stereo_msgs/DisparityImage` output. |
 | `point_stride` | `2` | Sample every second pixel in each dimension for XYZ; `1` uses the full grid. |
 | `lazy` | `true` | Release acquisition demand without measurement subscribers. |
 | `allow_provisional_calibration` | `false` | Explicitly allow provisional preview while preserving its authority. |
 | `reliability` / `qos_depth` | `best_effort` / `1` | Measurement publisher QoS; match subscribers and recording settings. |
+
+Optional device/calibration pins and restart/clock policies are described in the
+[reference](docs/reference.md#identity-calibration-and-clock-policies).
+The default leaves pins empty, accepts acquisition restarts and remaps clock
+jumps. Use the [strict example](nuvo_bringup/config/strict.yaml) for commissioning.
 
 The default namespace is `/nuvo/front`; `frame_id` is
 `nuvo_front_left_rectified_optical`. Supply its mounting transform in your robot's
@@ -123,12 +129,18 @@ Measurements use best-effort, volatile QoS with depth 1 by default.
 | `depth/validity` | `sensor_msgs/msg/Image` | `8UC1`, original rejection codes; only `1` means accepted. |
 | `depth/camera_info` | `sensor_msgs/msg/CameraInfo` | Actual matching-grid rectified camera geometry, per frame. |
 | `points` | `sensor_msgs/msg/PointCloud2` | Optional organized XYZ in metres, invalid points NaN. |
+| `left/image_rect`, `left/camera_info` | `sensor_msgs/msg/Image`, `sensor_msgs/msg/CameraInfo` | Optional rectified left image and its image-grid calibration. |
+| `right/image_rect`, `right/camera_info` | Same as left | Optional right image and calibration, using `right_frame_id`. |
+| `disparity` | `stereo_msgs/msg/DisparityImage` | Optional matching-grid disparity with calibrated focal length, baseline and producer limits. |
 | `frame_metadata` | `nuvo_camera_msgs/msg/FrameMetadata` | Capture identity, calibration hash/authority, source time and timestamp policy. |
 | `/diagnostics` (absolute) | `diagnostic_msgs/msg/DiagnosticArray` | Connection, freshness, calibration and time status; reliable QoS. |
 
 Depth, validity and CameraInfo share their timestamp, frame and grid. See
 [measurement semantics](docs/reference.md#image-cloud-and-metadata-semantics)
 for projection, validity and timestamp details.
+Diagnostics describe fresh measurement availability and calibration authority;
+they do not establish robot health. Keep provisional evaluation in the separate
+[inspection launch](docs/integration.md#isolated-inspection).
 
 ## Optional: local-only operation
 
@@ -158,12 +170,13 @@ already omits it. Keep networking for DDS and SSH. See
 | --- | --- |
 | Node runs but no images arrive | Start a measurement subscriber with best-effort QoS; topic discovery alone does not activate the lazy driver. |
 | Missing geometry or provisional-calibration diagnostic | Follow the [beta 8 compatibility instructions](docs/reference.md#beta-8-and-older-recordings). An override must match the actual hash/grid and cannot validate provisional calibration. |
-| Socket missing or permission denied | Check the native service, socket and `nuvo-video` GID. A native-service restart can recreate `/run/nuvo-depth`, leaving the container's directory mount stale. |
+| Socket missing or permission denied | Check the native service, socket and `nuvo-video` GID. Older native units or manual runtime-directory removal can leave a stale container mount. |
 | Another ROS machine cannot discover topics | Match `ROS_DOMAIN_ID`, QoS and the robot's DDS/network settings. The Nuvo gateway does not carry DDS traffic. |
 
-After a native-service restart, wait for `nuvo-depthd-native.service` to report
-`active`, then recreate the container if its mount is stale. Use the same command
-after changing `docker/.env`:
+Updated native full/minimal units preserve the runtime directory across ordinary
+restarts. After upgrading older units or replacing that directory, wait for native
+capture to be active and recreate the container. Also recreate after changing
+`docker/.env`:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --force-recreate camera

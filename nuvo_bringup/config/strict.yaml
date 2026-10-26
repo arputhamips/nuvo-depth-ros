@@ -1,0 +1,20 @@
+/**:
+  ros__parameters:
+    source: local
+    endpoint: /run/nuvo-depth/data.sock
+    frame_id: nuvo_left_rectified_optical
+    right_frame_id: nuvo_right_rectified_optical
+    timestamp_mode: local_boottime
+    allow_provisional_calibration: false
+    # Set these optional deployment pins to the intended unit and calibration.
+    expected_device_uuid: ""
+    expected_calibration_sha256: ""
+    acquisition_restart_policy: reject
+    clock_jump_policy: latch
+    clock_jump_threshold_s: 0.1
+    maximum_frame_age_s: 1.0
+    publish_points: false
+    publish_left_rectified: false
+    publish_right_rectified: false
+    publish_disparity: false
+    lazy: true

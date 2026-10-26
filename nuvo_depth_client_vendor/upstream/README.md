@@ -63,6 +63,17 @@ verification remains required and unchanged.
 Frames retain exact device/run/capture/configuration identity and source boot
 time. Depth is optical-axis Z in metres, validity code 1 means accepted, and
 confidence is binary matcher support. No function changes calibration authority.
+Decode rejects unknown validity codes, non-NaN invalid depth, infinite samples,
+producer stereo configuration rejection and accepted measurements that contradict
+declared depth/disparity ranges or valid ROI. When both products and matching
+geometry are available, it verifies optical-axis Z against native disparity,
+including the principal-point offset. A depth-only subscription uses the depth
+and validity products directly; it does not request images or disparity.
+`Frame::depth_constraints` and `Frame::disparity_constraints` expose validated,
+typed declarations for adapters. They remain absent on old recordings that did
+not declare them; the SDK cannot verify undeclared limits or missing geometry.
+Image-only products have no measurement metadata prerequisite. Validation parses
+metadata once and scans selected matching samples once without copying pixels.
 Geometry is optional for old recordings/devices. Public beta 8 lacks the newer
 geometry fields: geometry-dependent consumers must reject it or deliberately
 apply a matching calibration hash/grid override. Override JSON contains

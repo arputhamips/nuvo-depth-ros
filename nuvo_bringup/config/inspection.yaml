@@ -1,0 +1,21 @@
+/**:
+  ros__parameters:
+    source: local
+    endpoint: /run/nuvo-depth/data.sock
+    frame_id: nuvo_left_rectified_optical
+    right_frame_id: nuvo_right_rectified_optical
+    timestamp_mode: local_boottime
+    # Explicit opt-in for provisional calibration in the inspection namespace.
+    # Diagnostics continue to report calibration_qualified=false.
+    allow_provisional_calibration: true
+    expected_device_uuid: ""
+    expected_calibration_sha256: ""
+    acquisition_restart_policy: accept
+    clock_jump_policy: remap
+    clock_jump_threshold_s: 0.1
+    maximum_frame_age_s: 1.0
+    publish_points: false
+    publish_left_rectified: true
+    publish_right_rectified: true
+    publish_disparity: true
+    lazy: true

@@ -35,6 +35,17 @@ struct Product {
   // Read-only views remain valid while their Frame (or a copy of it) is alive.
   std::span<const std::byte> bytes;
 };
+struct ValidRoi {
+  std::uint32_t x{}, y{}, width{}, height{};
+};
+struct DepthConstraints {
+  double minimum_m{}, maximum_m{};  // Inclusive accepted optical-axis Z range.
+};
+struct DisparityConstraints {
+  double accepted_min_px{}, accepted_max_px{};  // Half-open native disparity range.
+  double quantization_px{};
+  ValidRoi valid_roi;
+};
 struct Frame {
   Identity identity;
   std::uint64_t stream_sequence{};
@@ -42,6 +53,10 @@ struct Frame {
   std::string capture_clock, calibration_sha256;
   unsigned calibration_authority{};
   std::optional<Geometry> image_geometry, matching_geometry;
+  // Absent on older recordings. Declared constraints are validated at decode;
+  // adapters can use these without parsing metadata or copying pixel buffers.
+  std::optional<DepthConstraints> depth_constraints;
+  std::optional<DisparityConstraints> disparity_constraints;
   std::string metadata_json;
   std::vector<Product> products;
   std::shared_ptr<const void> owner;

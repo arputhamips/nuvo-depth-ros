@@ -51,6 +51,13 @@ std::uint64_t integer(const Json& object, const char* key,
           "integer outside contract bounds");
   return result;
 }
+double number(const Json& object, const char* key) {
+  const auto& value = object.at(key);
+  require(value.is_number(), "metadata value must be numeric");
+  const auto result = value.get<double>();
+  require(std::isfinite(result), "metadata number must be finite");
+  return result;
+}
 std::string hex(const Json& object, const char* key, std::size_t size) {
   auto value = object.at(key).get<std::string>();
   require(value.size() == size &&
@@ -94,10 +101,8 @@ GridMapping grid_mapping(const Json& j) {
       grid(j),
       static_cast<std::uint32_t>(integer(j, "reference_width", 16384)),
       static_cast<std::uint32_t>(integer(j, "reference_height", 16384)),
-      j.at("x_scale_to_reference").get<double>(),
-      j.at("y_scale_to_reference").get<double>(),
-      j.at("x_offset_to_reference").get<double>(),
-      j.at("y_offset_to_reference").get<double>()};
+      number(j, "x_scale_to_reference"), number(j, "y_scale_to_reference"),
+      number(j, "x_offset_to_reference"), number(j, "y_offset_to_reference")};
   require(std::isfinite(result.sx) && std::isfinite(result.sy) &&
               std::isfinite(result.ox) && std::isfinite(result.oy) &&
               result.sx > 0 && result.sy > 0,
@@ -117,7 +122,7 @@ Geometry geometry(const Json& value, Grid dimensions) {
   Geometry result{dimensions, matrix<12>(value.at("left_projection")),
                   matrix<12>(value.at("right_projection")),
                   matrix<16>(value.at("reprojection")),
-                  value.at("baseline_m").get<double>()};
+                  number(value, "baseline_m")};
   const auto& l = result.left_projection;
   const auto& r = result.right_projection;
   require(std::isfinite(result.baseline_m) && result.baseline_m > 0 &&
@@ -140,6 +145,91 @@ Geometry geometry(const Json& value, Grid dimensions) {
   for (std::size_t i = 0; i < q.size(); ++i)
     require(near(q[i], result.reprojection[i]), "Q disagrees with projections");
   return result;
+}
+
+// One bounded pass over the selected matching products, without allocating or
+// rewriting samples. Invalid depth is NaN; invalid disparity may remain finite
+// when a later depth-range check rejected an otherwise valid matcher result.
+void validate_measurements(const Frame& frame) {
+  const auto* depth = frame.find("depth");
+  const auto* disparity = frame.find("disparity");
+  const auto* validity = frame.find("validity");
+  const auto* confidence = frame.find("confidence");
+  const auto* reference = depth ? depth : disparity ? disparity : validity ? validity : confidence;
+  if (!reference) return;
+  for (const auto* product : {depth, disparity, validity, confidence})
+    if (product)
+      require(product->grid.width == reference->grid.width &&
+                  product->grid.height == reference->grid.height,
+              "matching product grids differ");
+  if (frame.matching_geometry)
+    require(reference->grid.width == frame.matching_geometry->grid.width &&
+                reference->grid.height == frame.matching_geometry->grid.height,
+            "measurement grid differs from calibration");
+  const auto count = static_cast<std::size_t>(reference->grid.width) * reference->grid.height;
+  const auto nan = std::numeric_limits<float>::quiet_NaN();
+  const auto offset = frame.matching_geometry
+                          ? frame.matching_geometry->left_projection[2] -
+                                frame.matching_geometry->right_projection[2]
+                          : 0.0;
+  const auto focal_baseline = frame.matching_geometry
+                                  ? frame.matching_geometry->left_projection[0] *
+                                        frame.matching_geometry->baseline_m
+                                  : 0.0;
+  if (frame.matching_geometry && (depth || disparity))
+    require(std::isfinite(offset) && std::isfinite(focal_baseline) && focal_baseline > 0,
+            "unrepresentable stereo focal length, baseline or principal offset");
+  for (std::size_t i = 0; i < count; ++i) {
+    const auto z = depth ? float32_le(depth->bytes.data() + 4 * i) : nan;
+    const auto d = disparity ? float32_le(disparity->bytes.data() + 4 * i) : nan;
+    require(!std::isinf(z) && !std::isinf(d), "infinite measurement");
+    const auto code = validity ? std::to_integer<unsigned>(validity->bytes[i]) : 0U;
+    require(code <= 11, "unknown validity code");
+    const bool accepted = validity ? code == 1 : depth ? std::isfinite(z) : std::isfinite(d);
+    if (!accepted) {
+      if (depth) require(std::isnan(z), "invalid depth must be NaN");
+      continue;
+    }
+    if (depth) {
+      require(std::isfinite(z) && z > 0, "accepted depth must be finite and positive");
+      if (frame.depth_constraints)
+        require(z >= frame.depth_constraints->minimum_m && z <= frame.depth_constraints->maximum_m,
+                "accepted depth exceeds declared range");
+    }
+    if (disparity)
+      require(std::isfinite(d), "accepted disparity must be finite");
+    if (frame.disparity_constraints) {
+      const auto& constraints = *frame.disparity_constraints;
+      const auto x = i % reference->grid.width, y = i / reference->grid.width;
+      const auto& roi = constraints.valid_roi;
+      require(x >= roi.x && x < roi.x + roi.width && y >= roi.y && y < roi.y + roi.height,
+              "accepted measurement exceeds valid ROI");
+      if (disparity)
+        require(d >= constraints.accepted_min_px && d < constraints.accepted_max_px,
+                "accepted disparity exceeds declared range");
+    }
+    if (frame.matching_geometry && (depth || disparity)) {
+      if (disparity) {
+        const auto effective = static_cast<double>(d) - offset;
+        require(effective > 0, "accepted effective disparity must be positive");
+        if (depth) {
+          const auto expected = focal_baseline / effective;
+          require(std::isfinite(expected) &&
+                      std::abs(z - expected) <= 1e-4 * std::max(1.0, expected),
+                  "accepted depth/disparity/calibration disagree");
+        }
+      } else if (depth && frame.disparity_constraints) {
+        const auto inferred = focal_baseline / z + offset;
+        const auto& constraints = *frame.disparity_constraints;
+        // Depth was rounded to float32 by the producer. Its inferred disparity
+        // can straddle an interval endpoint by that rounding error.
+        const auto tolerance = 1e-6 * std::max({1.0, std::abs(inferred), std::abs(offset)});
+        require(std::isfinite(inferred) && inferred >= constraints.accepted_min_px - tolerance &&
+                    inferred < constraints.accepted_max_px + tolerance,
+                "accepted depth contradicts declared disparity range");
+      }
+    }
+  }
 }
 }  // namespace
 const Product* Frame::find(std::string_view kind) const noexcept {
@@ -190,9 +280,6 @@ Frame decode_frame(std::span<const std::byte> bytes,
   result.calibration_sha256 = hex(j, "calibration_sha256", 64);
   result.calibration_authority =
       static_cast<unsigned>(integer(j, "calibration_authority", 2, false));
-  require(j.value("depth_unit", std::string{}) == "metres" &&
-              j.value("depth_convention", std::string{}) == "optical_axis_z",
-          "unsupported depth units or convention");
   const auto payload = bytes.subspan(kHeaderBytes + h.metadata_bytes);
   const auto& descriptors = j.at("products");
   require(descriptors.is_array() && !descriptors.empty() &&
@@ -240,18 +327,30 @@ Frame decode_frame(std::span<const std::byte> bytes,
     p.bytes = payload.subspan(offset, length);
     result.products.push_back(p);
   }
+  std::sort(ranges.begin(), ranges.end());
+  std::size_t next{};
+  for (const auto& [start, end] : ranges) {
+    require(start == next, "payload contains undeclared bytes");
+    next = end;
+  }
+  require(next == payload.size(), "payload contains undeclared bytes");
   if (j.contains("selected_products"))
     require(integer(j, "selected_products", 16383) == mask,
             "selected mask disagrees with descriptors");
   if (j.contains("available_products"))
     require((integer(j, "available_products", 16383) & mask) == mask,
             "available mask disagrees with descriptors");
-  if (const auto* depth = result.find("depth")) {
-    const auto* valid = result.find("validity");
-    if (valid)
-      require(depth->grid.width == valid->grid.width &&
-                  depth->grid.height == valid->grid.height,
-              "depth and validity grids differ");
+  const bool measurements = (mask & 60U) != 0;
+  if (measurements) {
+    require(j.value("depth_unit", std::string{}) == "metres" &&
+                j.value("depth_convention", std::string{}) == "optical_axis_z",
+            "unsupported depth units or convention");
+  }
+  if (j.contains("stereo_configuration_error")) {
+    const auto& error = j.at("stereo_configuration_error");
+    require(error.is_string(), "stereo configuration error must be text");
+    if (measurements)
+      require(error.get_ref<const std::string&>().empty(), "producer stereo configuration rejected");
   }
   std::optional<GridMapping> image_grid, matching_grid;
   if (j.contains("image_grid")) image_grid = grid_mapping(j.at("image_grid"));
@@ -300,6 +399,41 @@ Frame decode_frame(std::span<const std::byte> bytes,
                 "calibration projections disagree with pixel-grid mapping");
     }
   }
+  if (measurements && j.contains("depth_metadata")) {
+    const auto& value = j.at("depth_metadata");
+    DepthConstraints constraints{number(value, "minimum_m"), number(value, "maximum_m")};
+    require(value.at("invalid_is_nan").is_boolean() && value.at("invalid_is_nan") == true &&
+                constraints.minimum_m > 0 && constraints.maximum_m > constraints.minimum_m,
+            "invalid declared depth constraints");
+    result.depth_constraints = constraints;
+  }
+  if (measurements && j.contains("disparity_metadata")) {
+    const auto& value = j.at("disparity_metadata");
+    require(value.at("unit") == "matching_grid_pixels" &&
+                value.at("invalid_is_nan").is_boolean() && value.at("invalid_is_nan") == true,
+            "invalid declared disparity convention");
+    DisparityConstraints constraints{number(value, "accepted_min_px"),
+                                    number(value, "accepted_max_px"),
+                                    number(value, "quantization_px"), {}};
+    require(constraints.accepted_max_px > constraints.accepted_min_px && constraints.quantization_px > 0,
+            "invalid declared disparity range or quantization");
+    const auto* reference = result.find("depth");
+    if (!reference) reference = result.find("disparity");
+    if (!reference) reference = result.find("validity");
+    if (!reference) reference = result.find("confidence");
+    const auto& roi = value.at("valid_roi");
+    const auto width = reference->grid.width, height = reference->grid.height;
+    constraints.valid_roi = {
+        static_cast<std::uint32_t>(integer(roi, "x", width, false)),
+        static_cast<std::uint32_t>(integer(roi, "y", height, false)),
+        static_cast<std::uint32_t>(integer(roi, "width", width)),
+        static_cast<std::uint32_t>(integer(roi, "height", height))};
+    require(constraints.valid_roi.width <= width - constraints.valid_roi.x &&
+                constraints.valid_roi.height <= height - constraints.valid_roi.y,
+            "declared valid ROI exceeds matching grid");
+    result.disparity_constraints = constraints;
+  }
+  validate_measurements(result);
   return result;
 }
 void validate(const Subscription& s) {
@@ -336,5 +470,11 @@ void apply_calibration_override(Frame& f, const CalibrationOverride& c) {
           "override grid differs from depth");
   require(!f.matching_geometry, "override must not replace producer geometry");
   f.matching_geometry = c.matching;
+  try {
+    validate_measurements(f);
+  } catch (...) {
+    f.matching_geometry.reset();
+    throw;
+  }
 }
 }  // namespace nuvo::client

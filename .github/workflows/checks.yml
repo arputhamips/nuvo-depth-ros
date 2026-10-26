@@ -3,11 +3,19 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      architecture:
+        description: Native runner architecture (ARM64 qualification is manual)
+        type: choice
+        options: [amd64, arm64]
+        default: amd64
 permissions:
   contents: read
+env:
+  NUVO_TEST_ARCH: ${{ github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && 'arm64' || 'amd64' }}
 jobs:
   jazzy:
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     container: ros:jazzy-ros-base@sha256:103b6c417973394659af6804d4917cd489b91e5ed22eb7bef263025a3bed2410
     timeout-minutes: 25
     steps:
@@ -16,7 +24,7 @@ jobs:
       - name: Install declared development dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3-colcon-common-extensions nlohmann-json3-dev libboost-system-dev libssl-dev libc-ares-dev openssl ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest ros-jazzy-rmw-cyclonedds-cpp
+          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3-colcon-common-extensions nlohmann-json3-dev libboost-system-dev libssl-dev libc-ares-dev openssl ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-stereo-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest ros-jazzy-rmw-cyclonedds-cpp
       - name: Verify immutable SDK and independent public client
         run: |
           python3 tools/refresh_sdk.py --check
@@ -32,22 +40,29 @@ jobs:
           colcon test --return-code-on-test-failure
           colcon test-result --verbose
           source install/setup.bash
+          export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
           RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/integration.py
+          RMW_IMPLEMENTATION=rmw_cyclonedds_cpp python3 test/fullsize.py
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: jazzy-contract-results
+          name: jazzy-contract-results-${{ env.NUVO_TEST_ARCH }}
           path: |
             log/
             build/*/test_results/
             output/client/Testing/
+            output/fullsize/
             nuvo_depth_client_vendor/upstream/SOURCE-MANIFEST.json
           if-no-files-found: error
   deployment:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        https: ['ON', 'OFF']
     env:
-      NUVO_TEST_IMAGE: nuvo-depth-ros:ci
+      NUVO_TEST_IMAGE: nuvo-depth-ros:ci-${{ matrix.https }}
       NUVO_TEST_OUTPUT_DIR: ${{ github.workspace }}/output/deployment
       ROS_DOMAIN_ID: '92'
       RMW_IMPLEMENTATION: rmw_cyclonedds_cpp
@@ -66,22 +81,41 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             python3-colcon-common-extensions ros-jazzy-ament-cmake \
             ros-jazzy-rosidl-default-generators ros-jazzy-rclpy \
-            ros-jazzy-sensor-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs \
+            ros-jazzy-sensor-msgs ros-jazzy-stereo-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs \
             ros-jazzy-rmw-cyclonedds-cpp
       - name: Build host metadata messages and final runtime image
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
+          test "$(dpkg --print-architecture)" = "$NUVO_TEST_ARCH"
           colcon build --packages-select nuvo_camera_msgs --executor sequential
           mkdir -p "$NUVO_TEST_OUTPUT_DIR"
-          docker build --progress plain -f docker/Dockerfile -t "$NUVO_TEST_IMAGE" . \
+          docker build --platform "linux/$NUVO_TEST_ARCH" --progress plain --build-arg NUVO_CLIENT_WITH_HTTPS=${{ matrix.https }} -f docker/Dockerfile -t "$NUVO_TEST_IMAGE" . \
             2>&1 | tee "$NUVO_TEST_OUTPUT_DIR/docker-build.log"
+          test "$(docker image inspect "$NUVO_TEST_IMAGE" --format '{{.Architecture}}')" = "$NUVO_TEST_ARCH"
       - name: Native host socket and clock to unprivileged ROS container
         shell: bash
         run: |
           source /opt/ros/jazzy/setup.bash
           source install/setup.bash
+          export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
           python3 test/container_host_ipc.py
+          python3 test/fullsize.py --container
+          python3 test/docker_dependencies.py
+      - name: Collect reviewable ARM64 runtime bundle
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.architecture == 'arm64'
+        shell: bash
+        run: |
+          mkdir -p "$NUVO_TEST_OUTPUT_DIR"
+          if docker image inspect "$NUVO_TEST_IMAGE" >/dev/null; then
+            bundle_dir="$(mktemp -d)"
+            container_id="$(docker create "$NUVO_TEST_IMAGE")"
+            docker cp "$container_id:/ws/install" "$bundle_dir/install"
+            docker rm "$container_id"
+            tar -czf "$NUVO_TEST_OUTPUT_DIR/nuvo-depth-ros-jazzy-arm64-https-${{ matrix.https }}.tar.gz" \
+              -C "$bundle_dir" install
+            sha256sum "$NUVO_TEST_OUTPUT_DIR/"*.tar.gz > "$NUVO_TEST_OUTPUT_DIR/SHA256SUMS"
+          fi
       - name: Record resolved deployment versions
         if: always()
         shell: bash
@@ -96,7 +130,7 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         if: always()
         with:
-          name: host-container-deployment-results
+          name: host-container-deployment-results-${{ env.NUVO_TEST_ARCH }}-https-${{ matrix.https }}
           path: |
             output/deployment/
             log/

@@ -3,6 +3,8 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+      args:
+        NUVO_CLIENT_WITH_HTTPS: "${NUVO_CLIENT_WITH_HTTPS:-ON}"
     # ROS DDS networking only; source: local reads host memfd frames via AF_UNIX.
     # Nuvo's host gateway is independent and can remain masked for local-only use.
     network_mode: host
@@ -17,6 +19,7 @@ services:
     environment:
       ROS_DOMAIN_ID: "${ROS_DOMAIN_ID:-0}"
       RMW_IMPLEMENTATION: "${RMW_IMPLEMENTATION:-rmw_cyclonedds_cpp}"
+      CYCLONEDDS_URI: "${CYCLONEDDS_URI:-file:///ws/install/share/nuvo_bringup/config/cyclonedds.xml}"
     command: ["ros2", "launch", "nuvo_bringup", "camera.launch.py", "config:=/config/camera.yaml"]
     init: true
     restart: unless-stopped

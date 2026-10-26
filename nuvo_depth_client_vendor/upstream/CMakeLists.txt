@@ -60,6 +60,8 @@ if(NUVO_CLIENT_BUILD_TESTS)
   add_test(NAME nuvo_client_transports COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/transports.py $<TARGET_FILE:nuvo_client_test>)
   set_tests_properties(nuvo_client_transports PROPERTIES ENVIRONMENT "NUVO_CLIENT_WITH_HTTPS=${NUVO_CLIENT_WITH_HTTPS}")
+  add_test(NAME nuvo_client_measurements COMMAND ${Python3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/measurements.py $<TARGET_FILE:nuvo_client_test>)
   add_test(NAME nuvo_client_installed_consumer COMMAND ${Python3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/installed.py ${CMAKE_CURRENT_BINARY_DIR})
 endif()
