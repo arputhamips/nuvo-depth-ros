@@ -118,10 +118,12 @@ jobs:
           sudo apt-get install -y /tmp/ros2-apt-source.deb
           # Some hosted AMD64 runners download from the Azure mirror extremely
           # slowly. Use Ubuntu's standard HTTPS archive; ARM64 ports stay intact.
-          if [[ -f /etc/apt/sources.list.d/ubuntu.sources ]]; then
-            sudo sed -i 's|http://azure.archive.ubuntu.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' \
-              /etc/apt/sources.list.d/ubuntu.sources
-          fi
+          # Hosted images may select the archive through mirror+file instead.
+          for source in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [[ -f "$source" ]]; then
+              sudo sed -i 's|http://azure\.archive\.ubuntu\.com/ubuntu|https://archive.ubuntu.com/ubuntu|g' "$source"
+            fi
+          done
           apt_network=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           sudo apt-get "${apt_network[@]}" update
           sudo apt-get "${apt_network[@]}" install -y --no-install-recommends \
