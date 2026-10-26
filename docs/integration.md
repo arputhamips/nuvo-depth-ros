@@ -59,6 +59,8 @@ The default measurement namespace is `/nuvo/front`. Choose your deployment's
 namespace with the `namespace` launch argument. Set `frame_id` and
 `right_frame_id` to the intended optical frames and provide their transforms
 through the downstream TF tree. A namespace change does not rename a frame ID.
+The transforms must describe the calibrated virtual rectified cameras; reusing
+a raw sensor optical frame's name alone does not establish the correct geometry.
 
 Measurements default to best-effort, volatile QoS with depth 1. Match subscriber
 QoS, and adapt the [recording overrides](../nuvo_bringup/config/recording-qos.yaml)
@@ -71,6 +73,10 @@ DDS configuration by overriding `RMW_IMPLEMENTATION` and supplying its profile.
 With `lazy: true`, a measurement subscriber creates native demand; diagnostics
 and topic discovery alone do not. Optional product flags create publishers, but
 those products are acquired only while their outputs have subscribers.
+When using HTTPS, confirm the gateway supports each requested product. An
+unsupported optional request rejects the entire subscription; automatic
+capability fallback is not implemented. Leave optional products disabled until
+their producer capabilities and consumers are known.
 
 ## Configure identities and failure policies
 
@@ -140,7 +146,10 @@ environment, then repeat the applicable checks on the actual hardware:
    mismatches and clock policies using controlled fixtures before live use.
 5. Subscribe to each enabled optional product. Verify its own geometry, encoding
    and frame, including right projection translation and disparity limits/ROI.
-   Keep products disabled when the consumer does not need them.
+   Check the required per-product availability flags and
+   `product_unavailable_reason`; another usable product can continue publishing
+   when one conversion lacks metadata. Keep products disabled when the consumer
+   does not need them.
 6. Record effective configuration, topic/QoS mapping, package/image versions,
    calibration identities, restart behavior and observed hardware results.
 

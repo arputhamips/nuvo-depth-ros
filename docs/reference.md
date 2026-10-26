@@ -127,6 +127,11 @@ Do not change only `source` in the default `camera.yaml`: it also pins the local
 socket endpoint and `timestamp_mode: local_boottime`. Use the complete source
 configuration above.
 
+Optional rectified-image/disparity products remain disabled by default. Confirm
+the remote gateway supports every requested product before enabling them: an
+unsupported requested product rejects the entire HTTPS subscription, including
+otherwise supported depth. Automatic capability fallback is not implemented.
+
 ## NVR1 replay
 
 Use the supplied [replay configuration](../nuvo_bringup/config/replay.yaml) as a
@@ -310,6 +315,9 @@ matching validity plane and emits NaN for every code other than `1`, including
 finite native disparities rejected by a later depth check. It preserves native
 NaNs and does not change the SDK's immutable native buffers. Missing required
 geometry, validity or producer constraints blocks the requested conversion.
+Other usable products from the capture can still publish; diagnostics expose
+per-product availability and `product_unavailable_reason`. This conversion
+behavior does not provide fallback for an unsupported HTTPS subscription.
 
 [FrameMetadata](../nuvo_camera_msgs/msg/FrameMetadata.msg) accompanies each
 published measurement and retains:
@@ -364,6 +372,7 @@ retry backoff; local acquisition never falls back to HTTPS.
 | `calibration_qualified`, `calibration_sha256`, `calibration_authority` | Native authority and identity; provisional remains unqualified even with preview enabled |
 | `depth_minimum_m`, `depth_maximum_m`, `disparity_accepted_min_px`, `disparity_accepted_max_px`, `disparity_quantization_px` | Producer constraints when present; missing declarations are not invented |
 | `identity_fault`, `clock_fault`, `fault_latched`, `reject_reason` | Current qualification or policy failure |
+| `product_unavailable_reason` | Conversion failures for requested products; inspect each required product's availability even when another product publishes |
 | `observed_*`, `published_*` | Latest observed and published device/run/capture identity |
 | `published_frames`, `acquisition_errors`, `duplicate_frames`, `stale_frames`, `rejected_frames`, `acquisition_restarts`, `clock_jumps` | Counters for diagnosis |
 
@@ -405,8 +414,8 @@ Unix-socket/memfd acquisition path.
 An existing robot can retain Fast DDS with its independently qualified profile.
 This record does not qualify Fast DDS; no Fast DDS example is supplied.
 
-The [validation record](validation-20261026.md) distinguishes confirmed host
-transport results from pending final-container and ARM64 checks.
+The [validation record](validation-20261026.md) distinguishes confirmed host and
+container results on amd64 and hosted ARM64 from pending Pi hardware checks.
 
 ## Source build and development
 

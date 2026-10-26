@@ -7,8 +7,9 @@ The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
 This is a source package, with no released ROS APT package or prebuilt image.
-[Validation records](docs/validation-20261026.md) describe the host/container evidence; ARM64 builds, Pi camera
-operation, sustained performance and metric accuracy still need qualification.
+[Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
+build/runtime checks. Pi camera operation, sustained performance and metric
+accuracy still need qualification.
 Use the [integration guide](docs/integration.md) when replacing an existing
 camera adapter or commissioning a downstream consumer.
 
