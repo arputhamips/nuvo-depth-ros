@@ -46,6 +46,7 @@ bool FramePolicy::fail(const std::string& reason, bool identity, bool latch) {
   return false;
 }
 void FramePolicy::reject(const std::string& reason) { (void)fail(reason); }
+void FramePolicy::pause() { state_.available = false; }
 bool FramePolicy::check_clock(const nuvo::client::ClockSample& sample) {
   if (state_.latched) return false;
   if (!config_.local_boottime) return !state_.latched;

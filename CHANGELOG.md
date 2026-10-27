@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Treat subscriber disconnection during an in-flight frame as a demand pause,
+  with unavailable output and a waiting diagnostic. Preserve identity watermarks,
+  calibration authority, rejection history and latched faults across pauses.
+- Add a read-only native startup check and document the coherent PIO/PWM native
+  upgrade required when a legacy GPIO daemon meets a provisioned PWM channel.
+- Make the source-build path explicit for fixes newer than the v0.1.0 image.
+
 ## 0.1.0 — 2026-10-26
 
 Initial ROS 2 Jazzy release for Nuvo Depth. The adapter has no dependency on

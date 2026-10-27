@@ -37,6 +37,8 @@ class FramePolicy {
                            std::optional<nuvo::client::ClockSample> clock = {});
   void mark_published(const nuvo::client::Frame&, std::int64_t steady_ns);
   void reject(const std::string& reason);
+  // Release output availability without resetting identity, faults or counters.
+  void pause();
   void replay_segment();
   PolicyState snapshot(std::int64_t steady_ns,
                        std::optional<nuvo::client::ClockSample> clock = {});

@@ -155,6 +155,28 @@ TEST(FramePolicy, TimerClockCheckCanLatchWithoutAnyNewFrames) {
   EXPECT_TRUE(backward_fault.latched);
   EXPECT_FALSE(backward_fault.available);
 }
+TEST(FramePolicy, DemandPauseIsUnavailableWithoutExpiryAndPreservesFaultsAndIdentity) {
+  FramePolicy p({});
+  ASSERT_TRUE(accept(p, frame(5), second));
+  p.pause();
+  auto idle = p.snapshot(50 * second);
+  EXPECT_FALSE(idle.available);
+  EXPECT_TRUE(idle.reject_reason.empty());
+  EXPECT_EQ(idle.published->capture_sequence, 5U);
+  EXPECT_EQ(idle.rejected, 0U);
+  EXPECT_FALSE(p.observe(frame(4), 51 * second));
+  p.pause();
+  EXPECT_EQ(p.snapshot(52 * second).reject_reason, "acquisition_regressed");
+  ASSERT_TRUE(accept(p, frame(6), 53 * second));
+  auto replacement = frame(7);
+  replacement.identity.device_uuid = std::string(32, '4');
+  EXPECT_FALSE(p.observe(replacement, 54 * second));
+  p.pause();
+  const auto fault = p.snapshot(55 * second);
+  EXPECT_TRUE(fault.latched);
+  EXPECT_TRUE(fault.identity_fault);
+  EXPECT_EQ(fault.reject_reason, "device_changed");
+}
 TEST(FramePolicy, RejectClockPolicyRecoversOnlyOnANewFrame) {
   PolicyConfig c; c.local_boottime = true; c.clock_jump_policy = "reject";
   FramePolicy p(c);

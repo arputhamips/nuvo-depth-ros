@@ -184,6 +184,14 @@ class NuvoCamera::Impl {
     std::unique_lock lock(wait_mutex_);
     return wake_.wait_for(lock, delay, [this] { return stopped_.load(); });
   }
+  void pause_for_consumers() {
+    {
+      std::lock_guard lock(policy_mutex_);
+      policy_->pause();
+      available_products_ = 0;
+    }
+    state("waiting for ROS measurement subscribers", 1);
+  }
   std::shared_ptr<nuvo::client::Source> make_source() {
     if (source_kind_ == "local")
       return nuvo::client::local_source(endpoint_, subscription_);
@@ -210,7 +218,7 @@ class NuvoCamera::Impl {
         if (policy_->snapshot(steady_ns()).latched) return;
       }
       if (lazy_ && !has_consumers()) {
-        state("waiting for ROS measurement subscribers", 1);
+        pause_for_consumers();
         if (wait(std::chrono::milliseconds(200))) break;
         continue;
       }
@@ -366,7 +374,7 @@ class NuvoCamera::Impl {
   bool resume_replay() {
     const auto paused = std::chrono::steady_clock::now();
     while (!stopped_ && !has_consumers()) {
-      state("waiting for ROS measurement subscribers", 1);
+      pause_for_consumers();
       if (wait(std::chrono::milliseconds(200))) return false;
     }
     // Retain the open recording and pause its pacing, rather than rewinding
@@ -425,6 +433,8 @@ class NuvoCamera::Impl {
     // Rejected replay frames still advance playback pacing. Filtering them
     // before scheduling would scan a provisional recording at full CPU speed.
     if (!accepted) return false;
+    // A subscriber can disappear while next() or replay pacing is waiting.
+    if (lazy_ && !has_consumers()) return false;
     std_msgs::msg::Header header;
     header.stamp = rclcpp::Time(stamp);
     header.frame_id = frame_id_;
@@ -482,6 +492,9 @@ class NuvoCamera::Impl {
       std::lock_guard lock(policy_mutex_);
       product_error_ = product_error;
       if (!available) {
+        // DDS demand can also change between the checks above and conversion.
+        // No requested conversion is an idle transition, not a rejected frame.
+        if (product_error.empty()) return false;
         policy_->reject("no_usable_measurement_products");
         return false;
       }

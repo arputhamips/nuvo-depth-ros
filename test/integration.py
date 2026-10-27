@@ -237,6 +237,43 @@ def invalid_replay_timeline(binary,root):
 def latest_status(observer, namespace):
     return next((s for s in reversed(observer.diagnostics) if s.name==namespace+'/nuvo_camera'),None)
 
+def idle_diagnostics(binary,root):
+    namespace='/contract_idle';path=root/'idle.sock'
+    hold=threading.Event();blocked=threading.Event();release=threading.Event()
+    def produce(sequence,run):
+        if hold.is_set():
+            blocked.set()
+            assert release.wait(5),'test did not release the in-flight frame'
+        return packet(sequence,run,live=True)
+    peer=Peer(path,'2',produce);observer=Observer(namespace)
+    monitor=rclpy.create_node('idle_diagnostic_observer');statuses=[]
+    monitor.create_subscription(DiagnosticArray,'/diagnostics',
+        lambda message:statuses.extend(s for s in message.status if s.name==namespace+'/nuvo_camera'),10)
+    log=open(root/'idle.log','w+');process=start(binary,namespace,log,source='local',endpoint=path)
+    try:
+        observer.spin(lambda:observer.ready())
+        high=max(m.capture_sequence for m in observer.messages['metadata'].values())
+        hold.set();assert blocked.wait(3),'no pending frame request'
+        observer.node.destroy_node();observer=None
+        # Deliver the pending frame after DDS has removed every measurement reader.
+        time.sleep(.7);hold.clear();release.set()
+        deadline=time.monotonic()+5;idle=[]
+        while time.monotonic()<deadline:
+            rclpy.spin_once(monitor,timeout_sec=.1)
+            idle=[s for s in statuses if s.message=='waiting for ROS measurement subscribers']
+            if len(idle)>=3:break
+        assert len(idle)>=3,[(s.message,{v.key:v.value for v in s.values}) for s in statuses]
+        values=[{v.key:v.value for v in s.values} for s in idle[-3:]]
+        assert all(v['reject_reason']=='' and v['output_available']=='false' and
+                   v['rejected_frames']=='0' and v['acquisition_errors']=='0' for v in values),values
+        assert len({v['published_frames'] for v in values})==1,values
+        assert peer.client is None,'idle diagnostic retained the native subscription'
+        observer=Observer(namespace);observer.spin(lambda:observer.ready())
+        assert min(m.capture_sequence for m in observer.messages['metadata'].values())>high
+    finally:
+        release.set();stop(process);peer.close();monitor.destroy_node();log.close()
+        if observer:observer.node.destroy_node()
+
 def frame_pins_and_expiry(binary,root):
     for pin,expected,wrong,reason in [
         ('expected_calibration_sha256','3'*64,{'calibration_sha256':'4'*64},'calibration_pin_mismatch'),
@@ -424,6 +461,7 @@ def main():
         provisional_live(binary,root)
         invalid_replay_timeline(binary,root)
         frame_pins_and_expiry(binary,root)
+        idle_diagnostics(binary,root)
         continuity_reconnect_and_idle(binary,root)
         optional_subscriber_demand(binary,root)
         replay_product_availability(binary,root)

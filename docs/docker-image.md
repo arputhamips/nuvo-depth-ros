@@ -61,6 +61,12 @@ mixing an image with deployment files from a different version.
 
 ## Same Pi 5
 
+The published v0.1.0 image predates the idle-diagnostic fix on `main`. To use that
+fix now, clone `main`, leave `NUVO_IMAGE` unset, and follow the README's local
+build commands. No replacement v0.1.0 image is published. The source-built image
+and prebuilt release both require [working native startup](native-startup.md);
+installing ROS does not upgrade an old GPIO daemon to PIO PWM.
+
 Follow the [README prerequisites](../README.md#quick-start) to install working
 native Nuvo Depth, use the matching checkout above, and write
 `NUVO_VIDEO_GID` and `ROS_DOMAIN_ID` to `docker/.env`. Add:
