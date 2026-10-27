@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>nuvo_depth_client_vendor</name><version>0.1.0</version>
+  <name>nuvo_depth_client_vendor</name><version>0.1.1</version>
   <description>Pinned export of the canonical ROS-independent Nuvo acquisition SDK.</description>
   <maintainer email="nml@meridian.cv">NuvoHardware</maintainer>
   <license>GPL-3.0-or-later</license>

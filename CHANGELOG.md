@@ -1,13 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.1.1 — 2026-10-27
 
 - Treat subscriber disconnection during an in-flight frame as a demand pause,
   with unavailable output and a waiting diagnostic. Preserve identity watermarks,
   calibration authority, rejection history and latched faults across pauses.
 - Add a read-only native startup check and document the coherent PIO/PWM native
   upgrade required when a legacy GPIO daemon meets a provisioned PWM channel.
-- Make the source-build path explicit for fixes newer than the v0.1.0 image.
+- Publish the fixes in the versioned `jazzy-0.1.1` Docker image for Linux AMD64
+  and ARM64. Both Compose examples and the quick start use the prebuilt release;
+  building from source is optional.
+- Record the real Pi 5 retest: 300 coherent frame sets, optional products,
+  subscriber pause/resume and recovery after native service restart passed.
+  Calibration remained provisional; native startup requires a compatible native
+  installation and is not repaired by updating the ROS image alone.
 
 ## 0.1.0 — 2026-10-26
 

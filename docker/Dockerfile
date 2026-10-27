@@ -39,9 +39,11 @@ RUN dpkg-query -W -f='${Package}\t${Version}\n' > /tmp/base-packages.tsv \
     ros-jazzy-stereo-msgs ros-jazzy-rosgraph-msgs ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 ARG VCS_REF=unknown
+ARG DRIVER_VERSION=0.1.1
 LABEL org.nuvo.client.https="${NUVO_CLIENT_WITH_HTTPS}" \
       org.opencontainers.image.source="https://github.com/arputhamips/nuvo-depth-ros" \
       org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.version="${DRIVER_VERSION}" \
       org.opencontainers.image.licenses="GPL-3.0-or-later"
 COPY LICENSE NOTICE /usr/share/doc/nuvo-depth-ros/
 RUN mkdir -p /usr/share/nuvo-build \

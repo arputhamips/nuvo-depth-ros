@@ -2,43 +2,27 @@
 
 The container image includes Ubuntu 24.04, ROS 2 Jazzy and this driver. It runs
 the ROS adapter; the native Nuvo camera service and existing calibration stay on
-the camera host. The initial release image is:
+the camera host. The current release image includes the idle diagnostic fix:
 
 ```text
-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0
+ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1
 ```
 
-Use [release v0.1.0](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.0)
+Use [release v0.1.1](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.1)
 for the source, image digest, checksums and validation record. No GitHub login is
 needed to pull the public image. The release image selects `linux/amd64` or
 `linux/arm64` automatically and has HTTPS enabled alongside local acquisition
 and recording replay. No ROS APT package is provided.
 
-`jazzy-0.1.0` identifies this release; the publication workflow refuses to replace
+`jazzy-0.1.1` identifies this release; the publication workflow refuses to replace
 an existing versioned image. Pin the release's manifest digest when you need an
 immutable reference. `jazzy-trial` remains a mutable preview label for subsequent
 manually published trials. Hosted tests do not establish physical Pi camera
 accuracy or sustained performance.
 
-## Earlier trial validation
-
-The first public trial was published on **26 October 2026** from
-[`c326cfb`](https://github.com/arputhamips/nuvo-depth-ros/commit/c326cfb8e659619aebf3eaf983782ae4c48db0fc).
-The [manual validation/publication run](https://github.com/arputhamips/nuvo-depth-ros/actions/runs/40391844367)
-passed all six source/deployment jobs before publication. Both architectures
-passed the remote HTTPS container check as UID 1001, including session cleanup.
-An anonymous AMD64 pull and launch-argument check then passed from a separate
-Docker client with an empty credential configuration. Anonymous manifest lookup
-confirmed both platforms. No GitHub login is needed to pull this image.
-
-For the exact tested multi-platform image, use:
-
-```bash
-docker pull ghcr.io/arputhamips/nuvo-depth-ros@sha256:ee34359e6c9d42a5fdc4fb9227f037ad7259e201575789202690e8d523662027
-```
-
-Local evidence is retained under `output/audit/container-trial/` (ignored by Git),
-including the anonymous pull, published manifest and hosted HTTPS reports.
+The [Pi 5 retest](validation-pi5-20261027.md) covers the underlying fixes with an
+actual camera, including idle/resume and native-service restart recovery. Release
+notes record the exact release image digest and subsequent publication checks.
 
 ## Get the image and matching deployment files
 
@@ -46,7 +30,7 @@ On the Linux computer that will run the driver, install Docker Engine, Compose
 and Git. Then pull the release and check out the source revision recorded in it:
 
 ```bash
-NUVO_DOCKER_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0
+NUVO_DOCKER_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1
 sudo docker pull "$NUVO_DOCKER_IMAGE"
 git clone https://github.com/arputhamips/nuvo-depth-ros.git
 cd nuvo-depth-ros
@@ -61,18 +45,17 @@ mixing an image with deployment files from a different version.
 
 ## Same Pi 5
 
-The published v0.1.0 image predates the idle-diagnostic fix on `main`. To use that
-fix now, clone `main`, leave `NUVO_IMAGE` unset, and follow the README's local
-build commands. No replacement v0.1.0 image is published. The source-built image
-and prebuilt release both require [working native startup](native-startup.md);
+The v0.1.1 image includes the idle-diagnostic fix. It requires
+[working native startup](native-startup.md);
 installing ROS does not upgrade an old GPIO daemon to PIO PWM.
 
 Follow the [README prerequisites](../README.md#quick-start) to install working
 native Nuvo Depth, use the matching checkout above, and write
-`NUVO_VIDEO_GID` and `ROS_DOMAIN_ID` to `docker/.env`. Add:
+`NUVO_VIDEO_GID` and `ROS_DOMAIN_ID` to `docker/.env`. Both Compose examples
+default to the release image. To pin it explicitly, add:
 
 ```dotenv
-NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0
+NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1
 ```
 
 Edit `nuvo_bringup/config/camera.yaml` as needed. Public beta 8 still requires the
@@ -90,11 +73,27 @@ sudo docker compose --env-file docker/.env -f docker/compose.yaml logs --tail=50
 Then start the README's best-effort depth subscriber. The default driver waits
 for a measurement subscriber before requesting frames.
 
-For an update, select the new release's image and matching deployment files,
-then pull and run `up -d --no-build`. Keep a known working digest so you can
-return to it. If building locally instead, remove
-`NUVO_IMAGE` from `docker/.env` and use the README's build commands; this avoids
-giving a locally built image the registry release name.
+For an update, preserve your configuration and select the new release's matching
+deployment files. Change any existing `NUVO_IMAGE` line in `docker/.env` to
+`ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1`; an explicit old value overrides
+the Compose default. Pull and run `up -d --no-build` as above. This also replaces
+an older source-built container without rebuilding. Keep a known working digest
+so you can return to it. Updating ROS does not upgrade native camera packages.
+
+## Optional: build from source
+
+For development, set `NUVO_IMAGE=nuvo-depth-ros:local` in `docker/.env`, replacing
+any release-image setting. Then run from the repository root:
+
+```bash
+sudo docker compose --env-file docker/.env -f docker/compose.yaml build
+sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --no-build
+```
+
+The build runs colcon tests and defaults to two compiler jobs. Using the local
+image name keeps the published release name reserved for the downloaded image.
+To return to the prebuilt release, set `NUVO_IMAGE` to the release image and run
+the pull/start commands above.
 
 ## Remote Ethernet or provisioned USB Ethernet
 
@@ -119,7 +118,7 @@ put the device private key there. Prepare the environment from the repository ro
 mkdir -p docker/credentials
 chmod 700 docker/credentials
 chmod 600 docker/credentials/nuvo-token
-printf 'NUVO_UID=%s\nNUVO_GID=%s\nROS_DOMAIN_ID=0\nNUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0\n' \
+printf 'NUVO_UID=%s\nNUVO_GID=%s\nROS_DOMAIN_ID=0\nNUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1\n' \
   "$(id -u)" "$(id -g)" > docker/.env
 ```
 
@@ -148,7 +147,8 @@ and subscribing to DDS topics from a driver already running on the Pi.
 Maintainers manually run **ROS and client contracts** with `architecture=both`
 and `publish_image=true`, selecting the reviewed source branch. For a release,
 also set `release_version` to the matching version in all four ROS package
-manifests (for example `0.1.0`). This adds `jazzy-0.1.0` and refuses to overwrite
+manifests and the Dockerfile's `DRIVER_VERSION` (for example `0.1.1`). This adds
+`jazzy-0.1.1` and refuses to overwrite
 an existing versioned image. Ordinary pushes,
 pull requests and default manual runs only test and upload artifacts. The publish
 job runs only after all source and deployment jobs pass, including HTTPS ON/OFF
