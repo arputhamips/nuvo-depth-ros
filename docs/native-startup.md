@@ -39,7 +39,9 @@ Use a coherent native package build that includes all of these:
   prepared channel and disables it after stopping.
 
 The ROS release number does not identify the installed native version. Check
-native packages with `dpkg-query -W 'nuvo-depth*'`. Native source `98fcb4c29bcefd5398f6d2ddc669224917a40f31`
+native packages with `dpkg-query -W 'nuvo-depth*'`. Native **v0.1.1-beta.8 already
+includes PIO startup support**; a host still running native 0.1.0 has not been
+upgraded just because the ROS v0.1.0 image was installed. Native source `98fcb4c29bcefd5398f6d2ddc669224917a40f31`
 contains this startup support and preserves the runtime directory across service
 restarts. The public native beta 8 and a newer development build may have the same
 package version, so verify source provenance as well as the version string.
@@ -79,6 +81,9 @@ also inspect `journalctl -u nuvo-trigger-prepare.service -b -n 40 --no-pager`.
 Local `ExecStart=` overrides can retain obsolete command-line flags or bypass
 new package behavior. Compare them with the installed unit, preserve calibration
 paths and preview policy, and remove only overrides superseded by the package.
+In particular, a legacy `--snapshot-dir` argument can request native processing
+continuously even when ROS has no subscribers. It is not needed by this adapter;
+remove it only when that legacy snapshot consumer is no longer intended.
 
 After native startup passes, continue with the [ROS quick start](../README.md#quick-start).
 When upgrading from a legacy unit that replaces `/run/nuvo-depth`, recreate the

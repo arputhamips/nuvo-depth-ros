@@ -40,6 +40,10 @@ with the required capabilities and record the tested revision from the
 Preserve validated per-unit calibration. The provisional shared seed stays
 provisional; a software upgrade or driver migration does not require recalibration.
 
+The [Pi 5 hardware record](validation-pi5-20261027.md) identifies a tested native
+cohort and source-built ROS image, including GPIO/PWM startup and restart recovery.
+Use the [read-only native startup check](native-startup.md) before launching ROS.
+
 ## Map the consumer contract
 
 Inventory the old adapter's topic names, types, units, frame IDs, QoS and time

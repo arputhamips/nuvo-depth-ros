@@ -136,7 +136,7 @@ sudo docker compose --env-file docker/.env -f docker/compose.remote.yaml pull
 sudo docker compose --env-file docker/.env -f docker/compose.remote.yaml up -d
 sudo docker compose --env-file docker/.env -f docker/compose.remote.yaml logs --tail=50 camera
 sudo docker compose --env-file docker/.env -f docker/compose.remote.yaml exec camera \
-  ros2 topic echo /nuvo/front/depth/image_rect --once --field header --qos-reliability best_effort
+  /nuvo-entrypoint.sh ros2 topic echo /nuvo/front/depth/image_rect --once --field header --qos-reliability best_effort
 ```
 
 The remote setup needs no `nuvo-video` group or camera socket mount. See

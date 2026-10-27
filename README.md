@@ -13,7 +13,7 @@ provides source and a [prebuilt Docker image](docs/docker-image.md) for Pi ARM64
 and Linux PC AMD64. There is no released ROS APT package; local source builds
 remain supported. See the [changelog](CHANGELOG.md) for features and limitations.
 [Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
-build/runtime checks. A bounded real-camera Pi test verified topic contents and
+build/runtime checks. A bounded [real-camera Pi test](docs/validation-pi5-20261027.md) verified topic contents and
 subscriber recovery; sustained performance and metric accuracy still need qualification.
 The idle-diagnostic fix is newer than v0.1.0: build `main` below to use it.
 The published v0.1.0 image is unchanged.
@@ -79,17 +79,8 @@ need the geometry override, provisional preview or point clouds. Its directory
 is mounted at `/config`: a prepared host file `nuvo_bringup/config/geometry.json`
 uses `calibration_override_file: /config/geometry.json` in the YAML.
 
-**Build the current fixes** using the build commands below. For the older
-prebuilt v0.1.0 release instead, use its [matching deployment checkout](docs/docker-image.md#get-the-image-and-matching-deployment-files), and add
-`NUVO_IMAGE=ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.0` to `docker/.env`, then:
-
-```bash
-sudo docker compose --env-file docker/.env -f docker/compose.yaml pull
-sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --no-build
-```
-
-See [image details and remote-camera setup](docs/docker-image.md). To build
-from this checkout instead, leave `NUVO_IMAGE` unset and run:
+**Build and start the current fixes.** Leave `NUVO_IMAGE` unset in `docker/.env`
+and run:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml config --quiet
@@ -108,9 +99,7 @@ Receive a depth frame using the container's ROS environment:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml exec camera \
-  bash -lc 'source /opt/ros/jazzy/setup.bash &&
-    source /ws/install/setup.bash &&
-    ros2 topic echo /nuvo/front/depth/image_rect --once --field header --qos-reliability best_effort'
+  /nuvo-entrypoint.sh ros2 topic echo /nuvo/front/depth/image_rect --once --field header --qos-reliability best_effort
 ```
 
 A received header contains a timestamp and frame ID
@@ -118,6 +107,24 @@ A received header contains a timestamp and frame ID
 measurement subscriber starts acquisition. Listing topics or reading diagnostics
 does not request frames; demand is released after the last subscriber leaves.
 The command uses best-effort QoS to match the publisher.
+
+Inspect the driver status without requesting camera processing:
+
+```bash
+sudo docker compose --env-file docker/.env -f docker/compose.yaml exec camera \
+  /nuvo-entrypoint.sh ros2 topic echo /diagnostics --once
+```
+
+After a valid stream loses its last measurement subscriber, expect
+`waiting for ROS measurement subscribers` and `output_available: false`.
+Existing identity, clock or calibration failures remain visible. With
+provisional calibration and no opt-in, a
+measurement subscriber instead receives a diagnostic explaining the calibration
+gate. Keep that authority visible; installing ROS does not validate distances.
+
+To skip compilation, use the older [prebuilt v0.1.0 image and matching checkout](docs/docker-image.md#get-the-image-and-matching-deployment-files).
+That immutable image does not contain the idle-diagnostic fix. The download guide
+also covers remote-camera containers.
 
 ## Configuration
 
