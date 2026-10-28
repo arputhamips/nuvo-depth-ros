@@ -21,9 +21,11 @@ immutable reference. `jazzy-trial` remains a mutable preview label for subsequen
 manually published trials. Hosted tests do not establish physical Pi camera
 accuracy or sustained performance.
 
-The [Pi 5 retest](validation-pi5-20261027.md) covers the underlying fixes with an
-actual camera, including idle/resume and native-service restart recovery. Release
-notes record the exact release image digest and subsequent publication checks.
+The earlier [Pi 5 retest](validation-pi5-20261027.md) covers v0.1.1, including
+idle/resume and native-service restart recovery. The [v0.1.2 validation
+record](validation-20261028.md) documents successful hosted checks and public
+pulls; the new Pi installation and argument tests remain incomplete because
+the test Pi developed storage errors. Release notes record the exact image digest.
 
 ## Get the image and matching deployment files
 

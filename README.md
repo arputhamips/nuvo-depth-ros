@@ -12,9 +12,11 @@ The [v0.1.2 release](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/
 provides source and a [prebuilt Docker image](docs/docker-image.md) for Pi ARM64
 and Linux PC AMD64. There is no released ROS APT package; local source builds
 remain supported. See the [changelog](CHANGELOG.md) for features and limitations.
-[Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
-build/runtime checks. A bounded [real-camera Pi test](docs/validation-pi5-20261027.md) verified topic contents and
-subscriber recovery; sustained performance and metric accuracy still need qualification.
+[Release validation](docs/validation-20261028.md) covers AMD64/ARM64 builds,
+container checks and public downloads. The v0.1.2 Pi installation and argument
+tests remain incomplete because the test Pi developed storage errors. The
+earlier [real-camera Pi test](docs/validation-pi5-20261027.md) covers v0.1.1;
+it does not qualify v0.1.2, sustained performance or metric accuracy.
 The prebuilt image includes startup output/rate controls and explicit native
 calibration-bundle selection; no source build is needed. Native
 `v0.1.1-beta.9` is the compatible full/minimal camera release for these controls.
@@ -46,7 +48,9 @@ Run these commands on the **Pi host**, locally or over SSH. You need:
 - The unit's existing calibration. Preserve validated per-unit bundles; a ROS
   installation or software upgrade does not require recalibration.
 - Native **v0.1.1-beta.9** in the profile already installed. It supplies geometry,
-  runtime permissions and local calibration control. Older beta 8 needs the
+  runtime permissions and local calibration control. Its supported Pi kernel is
+  **`6.12.75+rpt-rpi-2712`**; check with `uname -r` before installation.
+  Older beta 8 needs the
   [matching geometry override](docs/reference.md#beta-8-and-older-recordings)
   for depth and does not support explicit bundle activation through ROS.
 
