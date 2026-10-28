@@ -13,11 +13,14 @@ provides source and a [prebuilt Docker image](docs/docker-image.md) for Pi ARM64
 and Linux PC AMD64. There is no released ROS APT package; local source builds
 remain supported. See the [changelog](CHANGELOG.md) for features and limitations.
 [Release validation](docs/validation-20261028.md) covers AMD64/ARM64 builds,
-container checks, public downloads and the scope of Pi testing. Actual Pi
+container checks, public downloads, public installation and 25 camera argument
+cases on the Pi. Actual Pi
 delivery exposed a small host DDS receive-buffer cap; v0.1.3 configures the
 needed minimum automatically. Sustained performance and metric accuracy still
 need qualification. The earlier [Pi record](docs/validation-pi5-20261027.md)
 covers v0.1.1 and its own tested cohort.
+The latest test Pi recovered after four native trigger-preparation retries on
+reboot; the validation record documents this unresolved startup delay.
 The prebuilt image includes startup output/rate controls and explicit native
 calibration-bundle selection; no source build is needed. Native
 `v0.1.1-beta.9` is the compatible full/minimal camera release for these controls.
