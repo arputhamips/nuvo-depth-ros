@@ -59,12 +59,15 @@ jobs:
       - name: Install declared development dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3-colcon-common-extensions nlohmann-json3-dev libboost-system-dev libssl-dev libc-ares-dev openssl ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-stereo-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest ros-jazzy-rmw-cyclonedds-cpp
+          apt-get install -y --no-install-recommends build-essential cmake ninja-build python3-colcon-common-extensions nlohmann-json3-dev libboost-system-dev libssl-dev libc-ares-dev openssl ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-stereo-msgs ros-jazzy-diagnostic-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest ros-jazzy-ament-cmake-python ros-jazzy-ament-cmake-pytest ros-jazzy-rmw-cyclonedds-cpp
       - name: Verify immutable SDK and independent public client
         run: |
           python3 tools/refresh_sdk.py --check
           python3 test/refresh_sdk_test.py
           python3 test/native_preflight_test.py
+          python3 test/run_camera_test.py
+          bash -n install-nuvo-depth-ros.sh
+          python3 test/bootstrap_test.py
           cmake -S nuvo_depth_client_vendor/upstream -B output/client -G Ninja -DNUVO_CLIENT_BUILD_TESTS=ON
           cmake --build output/client -j2
           ctest --test-dir output/client --output-on-failure

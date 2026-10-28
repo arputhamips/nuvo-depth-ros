@@ -14,6 +14,7 @@
     cadence_hz: 10.0
     delivery: best_effort
     allow_provisional_calibration: false
+    publish_depth: true
     publish_points: false
     lazy: true
     point_stride: 2

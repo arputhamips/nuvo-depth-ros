@@ -6,6 +6,8 @@
     right_frame_id: nuvo_right_rectified_optical
     timestamp_mode: local_boottime
     allow_provisional_calibration: false
+    calibration_file: ""
+    publish_depth: true
     # Set these optional deployment pins to the intended unit and calibration.
     expected_device_uuid: ""
     expected_calibration_sha256: ""

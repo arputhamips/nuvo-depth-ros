@@ -8,19 +8,24 @@ Applications can use standard ROS messages without the optional Nuvo metadata.
 The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
-The [v0.1.1 release](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.1)
+The [v0.1.2 release](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.2)
 provides source and a [prebuilt Docker image](docs/docker-image.md) for Pi ARM64
 and Linux PC AMD64. There is no released ROS APT package; local source builds
 remain supported. See the [changelog](CHANGELOG.md) for features and limitations.
 [Validation records](docs/validation-20261026.md) cover amd64 and hosted ARM64
 build/runtime checks. A bounded [real-camera Pi test](docs/validation-pi5-20261027.md) verified topic contents and
 subscriber recovery; sustained performance and metric accuracy still need qualification.
-The prebuilt image includes the idle-diagnostic fix; no source build is needed.
+The prebuilt image includes startup output/rate controls and explicit native
+calibration-bundle selection; no source build is needed. Native
+`v0.1.1-beta.9` is the compatible full/minimal camera release for these controls.
 New to the driver? Follow [Use Nuvo Depth in your ROS project](docs/using-in-robot.md)
 for custom namespaces, frames, topic remaps, a Python subscriber, RViz and multiple
 cameras. Use the [integration guide](docs/integration.md) for commissioning.
 
 See [how the same-Pi, Ethernet and USB-C paths communicate](docs/connections.md).
+
+See [startup controls for robot prototyping](docs/prototyping.md) for output
+selection, requested cadence, namespaces and explicit calibration-bundle selection.
 
 Choose the [Pi Docker setup](#quick-start), an [Ubuntu Jazzy source build](docs/reference.md#source-build-and-development),
 a [remote HTTPS camera](docs/reference.md#remote-https), or [recording replay](docs/reference.md#nvr1-replay).
@@ -33,16 +38,17 @@ Run these commands on the **Pi host**, locally or over SSH. You need:
 - Raspberry Pi OS Lite 64-bit with native Nuvo Depth already working, using the
   [full](https://docs.nuvohardware.com/vision-one/install/byo-pi) or
   [minimal](https://docs.nuvohardware.com/vision-one/install/minimal) installation.
-- Git, [Docker Engine and the Compose plugin](https://docs.docker.com/engine/install/debian/).
+  The beta 9 [full installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth.sh)
+  and [minimal installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth-minimal.sh)
+  are pinned release downloads; upgrade within the profile already installed.
+- Python 3, curl, tar, [Docker Engine and the Compose plugin](https://docs.docker.com/engine/install/debian/).
   ROS runs inside the Ubuntu 24.04 / Jazzy container; no host ROS install is needed.
 - The unit's existing calibration. Preserve validated per-unit bundles; a ROS
   installation or software upgrade does not require recalibration.
-- **Public camera beta 8: prepare the [matching geometry override](docs/reference.md#beta-8-and-older-recordings)
-  before starting.** Beta 8 does not send the geometry this driver requires.
-  Missing geometry blocks measurement publication. Provisional calibration also
-  needs the explicit `allow_provisional_calibration: true` opt-in.
-
-Check the prerequisites:
+- Native **v0.1.1-beta.9** in the profile already installed. It supplies geometry,
+  runtime permissions and local calibration control. Older beta 8 needs the
+  [matching geometry override](docs/reference.md#beta-8-and-older-recordings)
+  for depth and does not support explicit bundle activation through ROS.
 
 If native startup fails, resolve it using [native startup and GPIO/PWM recovery](docs/native-startup.md)
 before starting ROS. A socket left by an old process is insufficient evidence.
@@ -51,45 +57,51 @@ before starting ROS. A socket left by an old process is insufficient evidence.
 uname -m                                      # expected: aarch64
 systemctl is-active nuvo-depthd-native.service # expected: active
 sudo test -S /run/nuvo-depth/data.sock && echo "Nuvo socket exists"
-getent group nuvo-video                       # must return a numeric GID
 sudo docker version                          # client and server must respond
 sudo docker compose version
 ```
 
-Download the matching deployment files and save the host's numeric group ID:
+Download and run the fixed release installer:
 
 ```bash
-git clone --branch v0.1.1 https://github.com/arputhamips/nuvo-depth-ros.git
-cd nuvo-depth-ros
-sudo python3 tools/check_native.py
-NUVO_VIDEO_GID="$(getent group nuvo-video | cut -d: -f3)"
-test -n "$NUVO_VIDEO_GID" || { echo "Missing nuvo-video group" >&2; exit 1; }
-printf 'NUVO_VIDEO_GID=%s\nROS_DOMAIN_ID=0\n' "$NUVO_VIDEO_GID" > docker/.env
+curl -fsSL https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.2/install-nuvo-depth-ros.sh \
+  | sudo bash -s -- --outputs depth,points --cadence-hz 10
 ```
 
-The ignored `docker/.env` persists these settings across terminals. Change
-`ROS_DOMAIN_ID` there to match your robot. Optional `NUVO_NAMESPACE` and
-`NUVO_CONFIG` select your topic namespace and in-container YAML path; see the
-[robot setup example](docs/using-in-robot.md#configure-one-camera). Run all Compose commands from this
-repository root; each explicitly loads that file.
+This pulls `ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.2`, downloads deployment
+files at the image's recorded source revision into `/opt/nuvo-depth-ros/releases/`
+and pins the container to that image digest. The existing helper discovers the
+numeric `nuvo-video` group, checks native health and starts Compose. No build,
+Git checkout or manual `.env` setup is required. Docker itself is a prerequisite;
+the script reports a missing Engine/Compose installation without installing it.
 
-Edit [`nuvo_bringup/config/camera.yaml`](nuvo_bringup/config/camera.yaml) if you
-need the geometry override, provisional preview or point clouds. Its directory
-is mounted at `/config`: a prepared host file `nuvo_bringup/config/geometry.json`
-uses `calibration_override_file: /config/geometry.json` in the YAML.
+The first run saves safe defaults in `/etc/nuvo-depth-ros/camera.yaml`; reruns
+preserve that file. Omitted output/rate options use the YAML. Add
+`--namespace robot/front --ros-domain-id 42` for your robot, or
+`--config /absolute/path/to/camera.yaml` to use an existing file. Pass the same
+options on later reconfiguration runs; the deployed container retains them
+across automatic restarts. `--dry-run` checks readiness and prints the resolved
+deployment without starting ROS or activating calibration.
 
-**Pull and start the prebuilt release.** The Compose file defaults to
-`ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1`:
+For provisional inspection, add **`--allow-provisional-calibration`** explicitly.
+The default blocks provisional measurement publication and leaves
+`calibration_file` empty, preserving the native selection. A validated per-unit
+calibration does not need that preview flag. See the
+[bundle-selection example](docs/prototyping.md#select-an-existing-calibration-bundle)
+only when you intend to change native calibration.
+
+To review the script before running it, save the same versioned URL:
 
 ```bash
-sudo docker compose --env-file docker/.env -f docker/compose.yaml config --quiet
-sudo docker compose --env-file docker/.env -f docker/compose.yaml pull
-sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --no-build
-sudo docker compose --env-file docker/.env -f docker/compose.yaml logs --tail=50 camera
+curl -fsSL -o install-nuvo-depth-ros.sh \
+  https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.2/install-nuvo-depth-ros.sh
+less install-nuvo-depth-ros.sh
+sudo bash install-nuvo-depth-ros.sh --outputs depth,points --cadence-hz 10
+sudo docker logs --tail=50 docker-camera-1
 ```
 
 The image automatically selects ARM64 on the Pi or AMD64 on a Linux PC. It
-runs unprivileged, using the saved `nuvo-video` group and a read-only mount of
+runs unprivileged, using the discovered `nuvo-video` group and a read-only mount of
 `/run/nuvo-depth`; camera-device mounts and privileged mode are unnecessary.
 The supplied [Cyclone DDS profile](docs/reference.md#dds-transport) keeps UDP
 datagrams within a standard 1500-byte MTU for image and cloud delivery.
@@ -97,7 +109,7 @@ datagrams within a standard 1500-byte MTU for image and cloud delivery.
 Receive a depth frame using the container's ROS environment:
 
 ```bash
-sudo docker compose --env-file docker/.env -f docker/compose.yaml exec camera \
+sudo docker exec docker-camera-1 \
   /nuvo-entrypoint.sh ros2 topic echo /nuvo/front/depth/image_rect --once --field header --qos-reliability best_effort
 ```
 
@@ -110,7 +122,7 @@ The command uses best-effort QoS to match the publisher.
 Inspect the driver status without requesting camera processing:
 
 ```bash
-sudo docker compose --env-file docker/.env -f docker/compose.yaml exec camera \
+sudo docker exec docker-camera-1 \
   /nuvo-entrypoint.sh ros2 topic echo /diagnostics --once
 ```
 
@@ -127,21 +139,24 @@ remote-camera containers and [optional local builds](docs/docker-image.md#option
 ## Configuration
 
 Parameters in [`camera.yaml`](nuvo_bringup/config/camera.yaml) are fixed at
-startup. After editing the file, reload them with:
+startup. For the bootstrap installation, edit `/etc/nuvo-depth-ros/camera.yaml`
+and rerun the saved installer with the same launch options:
 
 ```bash
-sudo docker compose --env-file docker/.env -f docker/compose.yaml restart camera
+sudo bash install-nuvo-depth-ros.sh --outputs depth,points --cadence-hz 10
 ```
 
 | Parameter | Default in `camera.yaml` | Purpose |
 | --- | --- | --- |
 | `cadence_hz` | `10.0` | Requested delivery cadence, not a guaranteed frame rate. |
+| `publish_depth` | `true` | Depth, validity and matching CameraInfo publishers; independent of optional outputs. |
 | `publish_points` | `false` | Enable XYZ; conversion runs only with cloud subscribers. |
 | `publish_left_rectified` / `publish_right_rectified` | `false` / `false` | Enable rectified image and CameraInfo publishers; native products are requested only with subscribers. |
 | `publish_disparity` | `false` | Enable calibrated `stereo_msgs/DisparityImage` output. |
 | `point_stride` | `2` | Sample every second pixel in each dimension for XYZ; `1` uses the full grid. |
 | `lazy` | `true` | Release acquisition demand without measurement subscribers. |
 | `allow_provisional_calibration` | `false` | Explicitly allow provisional preview while preserving its authority. |
+| `calibration_file` | `""` | Empty retains native calibration; an explicit complete native bundle delegates validation/activation to native. |
 | `reliability` / `qos_depth` | `best_effort` / `1` | Measurement publisher QoS; match subscribers and recording settings. |
 
 Optional device/calibration pins and restart/clock policies are described in the
@@ -151,8 +166,8 @@ jumps. Use the [strict example](nuvo_bringup/config/strict.yaml) for commissioni
 
 The default namespace is `/nuvo/front`; `frame_id` is
 `nuvo_front_left_rectified_optical`. Supply its mounting transform in your robot's
-URDF/TF tree. The launch arguments are `namespace`, `name` and `config`; see the
-[reference](docs/reference.md) for source builds and other launch configurations.
+URDF/TF tree. Launch also exposes output/rate and calibration controls; see
+[startup controls](docs/prototyping.md) and the [reference](docs/reference.md).
 
 ## Topics
 
@@ -205,15 +220,15 @@ already omits it. Keep networking for DDS and SSH. See
 | --- | --- |
 | Node runs but no images arrive | Start a measurement subscriber with best-effort QoS; topic discovery alone does not activate the lazy driver. |
 | Native fails to request the trigger GPIO line | Follow [GPIO/PWM recovery](docs/native-startup.md#gpio-17-is-already-owned-by-pwm); upgrade the native startup components together. ROS does not own GPIO. |
-| Idle v0.1.0 reports `no_usable_measurement_products` | Upgrade to the prebuilt v0.1.1 image. Disconnection should report waiting for subscribers and `output_available=false`. |
+| Idle v0.1.0 reports `no_usable_measurement_products` | Upgrade to the prebuilt v0.1.2 image. Disconnection should report waiting for subscribers and `output_available=false`. |
 | Missing geometry or provisional-calibration diagnostic | Follow the [beta 8 compatibility instructions](docs/reference.md#beta-8-and-older-recordings). An override must match the actual hash/grid and cannot validate provisional calibration. |
 | Socket missing or permission denied | Check the native service, socket and `nuvo-video` GID. Older native units or manual runtime-directory removal can leave a stale container mount. |
 | Another ROS machine cannot discover topics | Match `ROS_DOMAIN_ID`, QoS and the robot's DDS/network settings. The Nuvo gateway does not carry DDS traffic. |
 
 Updated native full/minimal units preserve the runtime directory across ordinary
 restarts. After upgrading older units or replacing that directory, wait for native
-capture to be active and recreate the container. Also recreate after changing
-`docker/.env`:
+capture to be active and rerun the installer with your launch options. For a
+manual checkout deployment, recreate after changing `docker/.env`:
 
 ```bash
 sudo docker compose --env-file docker/.env -f docker/compose.yaml up -d --force-recreate camera

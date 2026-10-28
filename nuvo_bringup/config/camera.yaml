@@ -6,10 +6,18 @@
     frame_id: nuvo_front_left_rectified_optical
     right_frame_id: nuvo_front_right_rectified_optical
     timestamp_mode: local_boottime
+    # Upper target delivery rate; native capture/trigger configuration is unchanged.
     cadence_hz: 10.0
     delivery: best_effort
     allow_provisional_calibration: false
+    # Empty keeps the active native calibration. Explicit selection accepts a
+    # complete native accepted-bundle directory or uncompressed .tar.
+    calibration_file: ""
+    publish_depth: true
     publish_points: false
+    publish_left_rectified: false
+    publish_right_rectified: false
+    publish_disparity: false
     lazy: true
     point_stride: 2
     qos_depth: 1

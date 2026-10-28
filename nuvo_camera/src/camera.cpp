@@ -6,6 +6,7 @@
 #include <condition_variable>
 #include <diagnostic_msgs/msg/diagnostic_array.hpp>
 #include <diagnostic_msgs/msg/diagnostic_status.hpp>
+#include <filesystem>
 #include <mutex>
 #include <nuvo_camera_msgs/msg/frame_metadata.hpp>
 #include <optional>
@@ -41,6 +42,7 @@ class NuvoCamera::Impl {
         "allow_provisional_calibration", false, descriptor);
     enable_points_ =
         node_.declare_parameter("publish_points", false, descriptor);
+    enable_depth_ = node_.declare_parameter("publish_depth", true, descriptor);
     enable_left_ = node_.declare_parameter("publish_left_rectified", false, descriptor);
     enable_right_ = node_.declare_parameter("publish_right_rectified", false, descriptor);
     enable_disparity_ = node_.declare_parameter("publish_disparity", false, descriptor);
@@ -60,11 +62,17 @@ class NuvoCamera::Impl {
     const auto qos_depth = node_.declare_parameter("qos_depth", 1, descriptor);
     const auto reliability = text("reliability", "best_effort");
     const auto fallback = text("calibration_override_file", "");
+    const auto calibration_file = text("calibration_file", "");
     if (!fallback.empty())
       override_ = nuvo::client::load_calibration_override(fallback);
     if (source_kind_ != "local" && source_kind_ != "https" &&
         source_kind_ != "replay")
       throw std::invalid_argument("source must be local, https or replay");
+    if (!calibration_file.empty() && source_kind_ != "local")
+      throw std::invalid_argument(
+          "calibration_file requires source=local; select remote/replay calibration through native tools");
+    if (!enable_depth_ && !enable_points_ && !enable_left_ && !enable_right_ && !enable_disparity_)
+      throw std::invalid_argument("enable at least one measurement output with publish_depth, publish_points, publish_left_rectified, publish_right_rectified or publish_disparity");
     if (mode_ == "auto")
       mode_ = source_kind_ == "local"   ? "local_boottime"
               : source_kind_ == "https" ? "receipt"
@@ -132,12 +140,11 @@ class NuvoCamera::Impl {
     else
       throw std::invalid_argument(
           "reliability must be best_effort or reliable");
-    depth_ = node_.create_publisher<sensor_msgs::msg::Image>("depth/image_rect",
-                                                             qos);
-    validity_ =
-        node_.create_publisher<sensor_msgs::msg::Image>("depth/validity", qos);
-    info_ = node_.create_publisher<sensor_msgs::msg::CameraInfo>(
-        "depth/camera_info", qos);
+    if (enable_depth_) {
+      depth_ = node_.create_publisher<sensor_msgs::msg::Image>("depth/image_rect", qos);
+      validity_ = node_.create_publisher<sensor_msgs::msg::Image>("depth/validity", qos);
+      info_ = node_.create_publisher<sensor_msgs::msg::CameraInfo>("depth/camera_info", qos);
+    }
     metadata_ = node_.create_publisher<nuvo_camera_msgs::msg::FrameMetadata>(
         "frame_metadata", qos);
     if (enable_points_)
@@ -159,6 +166,19 @@ class NuvoCamera::Impl {
     if (publish_clock_)
       clock_ = node_.create_publisher<rosgraph_msgs::msg::Clock>(
           "/clock", rclcpp::ClockQoS());
+    // Explicit native bundle selection is a startup transaction. The default
+    // empty parameter never opens a control socket or changes native state.
+    if (!calibration_file.empty()) {
+      const auto calibration_socket = std::filesystem::path(endpoint_).parent_path() / "calibration.sock";
+      RCLCPP_INFO(node_.get_logger(), "Selecting native calibration bundle %s; waiting for native verification and fresh acquisition",
+                  calibration_file.c_str());
+      activated_calibration_ = nuvo::client::activate_local_calibration(calibration_file, calibration_socket);
+      if (!policy_config.expected_calibration_sha256.empty() &&
+          policy_config.expected_calibration_sha256 != activated_calibration_->calibration_sha256)
+        throw std::runtime_error("calibration_file selected native calibration conflicts with expected_calibration_sha256; publication has not started");
+      RCLCPP_INFO(node_.get_logger(), "Native calibration selected: %s (authority %u)",
+                  activated_calibration_->calibration_sha256.c_str(), activated_calibration_->calibration_authority);
+    }
     timer_ = node_.create_wall_timer(std::chrono::seconds(1),
                                      [this] { diagnose(); });
     worker_ = std::thread([this] { run(); });
@@ -278,6 +298,10 @@ class NuvoCamera::Impl {
               mode_ == "receipt" ? node_.now().nanoseconds() : 0;
           const auto clock_sample = mode_ == "local_boottime"
               ? std::optional(nuvo::client::local_clock_sample()) : std::nullopt;
+          if (activated_calibration_ &&
+              (frame->calibration_sha256 != activated_calibration_->calibration_sha256 ||
+               frame->calibration_authority != activated_calibration_->calibration_authority))
+            throw std::runtime_error("calibration_file selection does not match incoming native calibration hash/authority");
           bool accepted;
           std::string reason;
           {
@@ -291,7 +315,7 @@ class NuvoCamera::Impl {
             current->cancel();
             break;
           }
-          if (override_ && !frame->matching_geometry && (needs_depth() || consumers(disparity_)))
+          if (override_ && !frame->matching_geometry && (needs_depth() || needs_disparity()))
             nuvo::client::apply_calibration_override(*frame, *override_);
           if (!accepted && source_kind_ != "replay") {
             state(reason, 1);
@@ -342,27 +366,42 @@ class NuvoCamera::Impl {
     source_.reset();
   }
   bool has_consumers() const {
-    return needs_depth() || consumers(left_) || consumers(left_info_) ||
-        consumers(right_) || consumers(right_info_) || consumers(disparity_);
+    return needs_depth() || needs_left() || needs_right() || needs_disparity();
   }
   template<class T> static bool consumers(const std::shared_ptr<T>& publisher) {
     return publisher && (publisher->get_subscription_count() + publisher->get_intra_process_subscription_count() > 0);
   }
   bool needs_depth() const {
-    return !lazy_ || consumers(depth_) || consumers(validity_) || consumers(info_) || consumers(metadata_) || consumers(points_);
+    return consumers(points_) || (enable_points_ && !lazy_) ||
+        (enable_depth_ && (!lazy_ || consumers(depth_) || consumers(validity_) || consumers(info_) || consumers(metadata_))) ||
+        (enable_points_ && !enable_depth_ && !enable_left_ && !enable_right_ && !enable_disparity_ && consumers(metadata_));
+  }
+  bool needs_left() const {
+    return left_ && (!lazy_ || consumers(left_) || consumers(left_info_) || (!enable_depth_ && consumers(metadata_)));
+  }
+  bool needs_right() const {
+    return right_ && (!lazy_ || consumers(right_) || consumers(right_info_) || (!enable_depth_ && consumers(metadata_)));
+  }
+  bool needs_disparity() const {
+    return disparity_ && (!lazy_ || consumers(disparity_) || (!enable_depth_ && consumers(metadata_)));
   }
   std::vector<std::string> demanded_products() const {
     std::vector<std::string> result;
     if (needs_depth()) result = {"depth", "validity"};
-    if (consumers(left_) || consumers(left_info_)) result.push_back("left_rectified");
-    if (consumers(right_) || consumers(right_info_)) result.push_back("right_rectified");
-    if (consumers(disparity_)) {
+    if (needs_left()) result.push_back("left_rectified");
+    if (needs_right()) result.push_back("right_rectified");
+    if (needs_disparity()) {
       result.push_back("disparity");
       if (std::find(result.begin(), result.end(), "validity") == result.end()) result.push_back("validity");
     }
     // The outer lazy gate avoids acquiring with no consumers. A nonempty
     // fallback handles DDS count changes between the gate and connection.
-    if (result.empty()) result = {"depth", "validity"};
+    if (result.empty()) {
+      if (enable_depth_ || enable_points_) result = {"depth", "validity"};
+      else if (enable_left_) result = {"left_rectified"};
+      else if (enable_right_) result = {"right_rectified"};
+      else result = {"disparity", "validity"};
+    }
     return result;
   }
   static std::int64_t steady_ns() {
@@ -461,15 +500,15 @@ class NuvoCamera::Impl {
         available |= 1;
       });
     }
-    if ((consumers(left_) || consumers(left_info_)) && requested("left_rectified")) {
+    if (needs_left() && requested("left_rectified")) {
       prepare("left_rectified", [&] { left_image = rectified_image(frame, header); available |= 2; });
     }
-    if ((consumers(right_) || consumers(right_info_)) && requested("right_rectified")) {
+    if (needs_right() && requested("right_rectified")) {
       auto right_header = header;
       right_header.frame_id = right_frame_id_;
       prepare("right_rectified", [&] { right_image = rectified_image(frame, right_header, true); available |= 4; });
     }
-    if (consumers(disparity_) && requested("disparity")) {
+    if (needs_disparity() && requested("disparity")) {
       prepare("disparity", [&] { disparity_image = disparity(frame, header); available |= 8; });
     }
     nuvo_camera_msgs::msg::FrameMetadata metadata;
@@ -528,9 +567,11 @@ class NuvoCamera::Impl {
       }
       if (images) {
         if (point_cloud) points_->publish(std::move(*point_cloud));
-        info_->publish(images->camera_info);
-        validity_->publish(std::move(images->validity));
-        depth_->publish(std::move(images->depth));
+        if (enable_depth_) {
+          info_->publish(images->camera_info);
+          validity_->publish(std::move(images->validity));
+          depth_->publish(std::move(images->depth));
+        }
       }
       if (left_image) {
         left_info_->publish(left_image->camera_info);
@@ -600,6 +641,7 @@ class NuvoCamera::Impl {
       status.values.push_back(item);
     };
     add("source", source_kind_);
+    add("requested_cadence_hz", std::to_string(subscription_.cadence_hz));
     add("timestamp_mode", mode_);
     add("published_frames", std::to_string(published_.load()));
     add("acquisition_errors", std::to_string(errors_.load()));
@@ -616,6 +658,10 @@ class NuvoCamera::Impl {
     add("calibration_qualified", policy_state.calibration_qualified ? "true" : "false");
     add("calibration_sha256", policy_state.calibration_sha256);
     add("calibration_authority", std::to_string(policy_state.calibration_authority));
+    if (activated_calibration_) {
+      add("selected_calibration_sha256", activated_calibration_->calibration_sha256);
+      add("selected_calibration_authority", std::to_string(activated_calibration_->calibration_authority));
+    }
     if (policy_state.depth_constraints) {
       add("depth_minimum_m", std::to_string(policy_state.depth_constraints->minimum_m));
       add("depth_maximum_m", std::to_string(policy_state.depth_constraints->maximum_m));
@@ -631,7 +677,7 @@ class NuvoCamera::Impl {
     add("reject_reason", policy_state.reject_reason);
     add("product_unavailable_reason", product_error);
     add("output_available", policy_state.available ? "true" : "false");
-    add("depth_available", policy_state.available && (available & 1) ? "true" : "false");
+    add("depth_available", enable_depth_ && policy_state.available && (available & 1) ? "true" : "false");
     add("left_rectified_available", policy_state.available && (available & 2) ? "true" : "false");
     add("right_rectified_available", policy_state.available && (available & 4) ? "true" : "false");
     add("disparity_available", policy_state.available && (available & 8) ? "true" : "false");
@@ -655,7 +701,8 @@ class NuvoCamera::Impl {
       credential_, connect_address_;
   nuvo::client::Subscription subscription_;
   std::optional<nuvo::client::CalibrationOverride> override_;
-  bool allow_provisional_{}, enable_points_{}, enable_left_{}, enable_right_{}, enable_disparity_{}, lazy_{}, loop_{},
+  std::optional<nuvo::client::CalibrationActivation> activated_calibration_;
+  bool allow_provisional_{}, enable_depth_{true}, enable_points_{}, enable_left_{}, enable_right_{}, enable_disparity_{}, lazy_{}, loop_{},
       publish_clock_{}, segment_{};
   int stride_{};
   double speed_{}, max_age_{};

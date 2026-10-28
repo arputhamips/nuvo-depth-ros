@@ -1,5 +1,8 @@
 # Use Nuvo Depth in your ROS project
 
+For v0.1.2 output/rate launch arguments, automatic same-Pi startup and
+explicit native calibration selection, see [robot prototyping](prototyping.md).
+
 This is a general-purpose **ROS 2 Jazzy camera driver**. It has no dependency on
 Nuvo Base, a particular robot model, navigation stack, controller or robot TF
 tree. Applications consume ordinary ROS messages; the optional Nuvo metadata
@@ -18,8 +21,8 @@ USB Ethernet details, and [prebuilt Docker images](docker-image.md) to skip buil
 | ROS computer connected to a remote camera | [HTTPS source](reference.md#remote-https); remote headers use receipt time |
 | Developing without a camera | [NVR1 replay](reference.md#nvr1-replay), using an existing compatible recording |
 
-Native Nuvo Depth must already have usable calibration and publish the geometry
-needed by your selected products. Public camera beta 8 needs the explicit
+Native Nuvo Depth beta 9 supplies the geometry and local control needed by this
+release. It must already have usable calibration. Public camera beta 8 needs the explicit
 [matching-grid override](reference.md#beta-8-and-older-recordings) for depth.
 Installing this adapter does not install or upgrade the native camera software.
 It does not require recalibrating an unchanged camera. Provisional calibration
@@ -58,8 +61,18 @@ ros2 launch nuvo_bringup camera.launch.py \
   config:=/absolute/path/to/your/camera.yaml
 ```
 
-For Compose, put your YAML in `nuvo_bringup/config` and add these settings to
-`docker/.env` alongside `NUVO_VIDEO_GID` and `ROS_DOMAIN_ID`:
+For the [same-Pi bootstrap](../README.md#quick-start), pass your file and robot
+settings directly; group setup is automatic:
+
+```bash
+sudo bash install-nuvo-depth-ros.sh --config /absolute/path/to/your/camera.yaml \
+  --namespace sensors/depth_camera --ros-domain-id 42
+```
+
+Rerun with the same options after editing your file; the helper snapshots it
+read-only for container restarts. For a manual Compose checkout, put your YAML
+in `nuvo_bringup/config` and add these settings to `docker/.env` alongside
+`NUVO_VIDEO_GID` and `ROS_DOMAIN_ID`:
 
 ```dotenv
 NUVO_NAMESPACE=sensors/depth_camera

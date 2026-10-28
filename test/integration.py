@@ -1,5 +1,5 @@
 """Exercise the real ROS executable over DDS, replay and a restarting IPC peer."""
-import array, importlib.util, json, math, os, pathlib, signal, socket, struct, subprocess, sys, tempfile, threading, time
+import array, importlib.util, io, json, math, os, pathlib, signal, socket, struct, subprocess, sys, tarfile, tempfile, threading, time
 import rclpy
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2
@@ -125,7 +125,8 @@ class Observer:
         assert math.isnan(struct.unpack_from('<f',bytes(p.data),12)[0]);assert p.width==2 and not p.is_dense
 def start(binary,namespace,log,**parameters):
     args=[binary,'--ros-args','-r','__ns:='+namespace]
-    for key,value in dict(parameters,publish_points=True,point_stride=1).items():
+    selected=dict(publish_points=True,point_stride=1);selected.update(parameters)
+    for key,value in selected.items():
         encoded=json.dumps(value) if isinstance(value,(str,bool)) else str(value)
         args+=['-p',key+':='+encoded]
     return subprocess.Popen(args,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
@@ -408,6 +409,149 @@ def replay_product_availability(binary,root):
                 assert not left and values['left_rectified_available']=='false'
                 assert values['depth_available']=='true',(scenario,values)
         finally:stop(process);observer.node.destroy_node();log.close()
+
+def startup_output_selection(binary,root):
+    for kind in ('left','points','nonlazy_left','nonlazy_points'):
+        points_only=kind.endswith('points');nonlazy=kind.startswith('nonlazy')
+        namespace='/contract_selected_'+kind;path=root/(kind+'.sock')
+        peer=Peer(path,'2',lambda seq,run:packet(seq,run,live=True,optional_products=True))
+        observer=None;left=[]
+        log=open(root/(kind+'.log'),'w+')
+        process=start(binary,namespace,log,source='local',endpoint=path,cadence_hz=3.25,
+            publish_depth=False,publish_points=points_only,publish_left_rectified=not points_only,lazy=not nonlazy)
+        try:
+            if nonlazy:
+                deadline=time.monotonic()+5
+                while not peer.requests and time.monotonic()<deadline:time.sleep(.05)
+                assert peer.requests,'lazy=false did not acquire the configured output before subscribers'
+            observer=Observer(namespace)
+            observer.node.create_subscription(Image,namespace+'/left/image_rect',left.append,
+                QoSProfile(depth=20,reliability=ReliabilityPolicy.BEST_EFFORT))
+            observer.spin(lambda:len(observer.messages['metadata'])>=3 and
+                (len(observer.messages['points'])>=3 if points_only else len(left)>=3))
+            assert not observer.messages['depth'] and not observer.messages['validity'] and not observer.messages['info'], 'publish_depth=false published depth topics'
+            assert observer.node.count_publishers(namespace+'/depth/image_rect')==0
+            if points_only:
+                assert not left and observer.messages['points'], 'points-only output selection failed'
+                assert peer.subscriptions[-1]['products']==40
+            else:
+                assert not observer.messages['points'] and list(left[-1].data)==[17,18]
+                assert peer.subscriptions[-1]['products']==1,'image-only output selected native depth/matcher demand'
+            assert all(s['cadence_millihz']==3250 and s['preview_cadence_millihz']==0 for s in peer.subscriptions)
+        finally:
+            stop(process);peer.close();log.close()
+            if observer:observer.node.destroy_node()
+
+def startup_launch_controls(root):
+    """Installed launch entrypoints preserve YAML or apply typed optional values."""
+    for entry,overrides,expected_product,expected_cadence in [
+        ('camera.launch.py',[],1,7250),
+        ('camera.launch.py',['publish_left_rectified:=false','publish_right_rectified:=true','cadence_hz:=4.5'],2,4500),
+        ('inspection.launch.py',['publish_left_rectified:=false','publish_right_rectified:=true','cadence_hz:=6.25'],2,6250),
+    ]:
+        namespace='/contract_launch_'+str(expected_cadence);path=root/(str(expected_cadence)+'.sock')
+        peer=Peer(path,'2',lambda seq,run:packet(seq,run,authority=0,live=True,optional_products=True))
+        config=root/(str(expected_cadence)+'.yaml')
+        config.write_text(json.dumps({namespace+'/sensor':{'ros__parameters':dict(
+            source='local',endpoint=str(path),cadence_hz=7.25,publish_depth=False,
+            publish_left_rectified=True,publish_right_rectified=False,publish_points=False,
+            allow_provisional_calibration=True)}}))
+        observer=Observer(namespace);images=[]
+        topic='left/image_rect' if expected_product==1 else 'right/image_rect'
+        observer.node.create_subscription(Image,namespace+'/'+topic,images.append,
+            QoSProfile(depth=20,reliability=ReliabilityPolicy.BEST_EFFORT))
+        log=open(root/(str(expected_cadence)+'.log'),'w+')
+        process=subprocess.Popen(['ros2','launch','nuvo_bringup',entry,'namespace:='+namespace,
+            'name:=sensor','config:='+str(config),*overrides],stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+        try:
+            observer.spin(lambda:len(images)>=3 and len(observer.messages['metadata'])>=3)
+            assert process.poll() is None
+            assert all(m.calibration_authority==0 for m in observer.messages['metadata'].values()), 'launch lost YAML provisional opt-in'
+            assert not observer.messages['depth'] and not observer.messages['points'], 'launch lost YAML output selection'
+            assert peer.subscriptions[-1]['products']==expected_product
+            assert all(s['cadence_millihz']==expected_cadence for s in peer.subscriptions)
+        except Exception:
+            log.flush();log.seek(0);print(log.read(),file=sys.stderr);raise
+        finally:stop(process);peer.close();observer.node.destroy_node();log.close()
+
+class CalibrationPeer:
+    """Native control socket contract; measurement peer remains independent."""
+    def __init__(self,path,success=True):
+        self.path=path;self.success=success;self.requests=[];self.error=None
+        self.received=threading.Event();self.release=threading.Event()
+        self.server=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+        self.server.bind(str(path));self.server.listen();self.server.settimeout(8)
+        self.thread=threading.Thread(target=self.serve,daemon=True);self.thread.start()
+    def serve(self):
+        def exact(connection,count):
+            result=b''
+            while len(result)<count:
+                data=connection.recv(count-len(result))
+                if not data:raise AssertionError('truncated calibration request')
+                result+=data
+            return result
+        try:
+            with self.server.accept()[0] as connection:
+                connection.settimeout(8)
+                header=exact(connection,12);assert header[:4]==b'NVC1'
+                payload=exact(connection,struct.unpack_from('>Q',header,4)[0])
+                with tarfile.open(fileobj=io.BytesIO(payload),mode='r:') as bundle:
+                    self.requests.append({member.name:bundle.extractfile(member).read() for member in bundle})
+                self.received.set();assert self.release.wait(8),'test did not release calibration activation'
+                response=dict(schema_version=1,ok=self.success,code='activated' if self.success else 'invalid_bundle',
+                    calibration_sha256='3'*64,calibration_authority=1,run_uuid='2'*32,unchanged=False,
+                    message='fixture rejected native calibration')
+                encoded=json.dumps(response).encode();connection.sendall(b'NCA1'+struct.pack('>I',len(encoded))+encoded)
+        except Exception as error:self.error=error;self.received.set()
+    def close(self):
+        self.release.set();self.server.close();self.thread.join(9)
+        assert not self.thread.is_alive(),'calibration fixture did not stop'
+        if self.error:raise self.error
+
+def startup_native_calibration(binary,root):
+    if os.geteuid()!=0:
+        print('Synthetic native calibration contract skipped: authenticated broker fixture requires UID 0')
+        return
+    bundle=root/'accepted bundle';bundle.mkdir()
+    members=('manifest.json','front_left.yaml','front_right.yaml','validation.json')
+    for name in members:(bundle/name).write_text('native fixture '+name)
+    for scenario in ('accepted','rejected','mismatched_frame','mismatched_authority','conflicting_pin'):
+        directory=root/scenario;directory.mkdir()
+        control=CalibrationPeer(directory/'calibration.sock',success=scenario!='rejected')
+        peer=Peer(directory/'data.sock','2',lambda seq,run:packet(seq,run,live=True,authority=2 if scenario=='mismatched_authority' else 1,
+            fields={'calibration_sha256':'4'*64} if scenario=='mismatched_frame' else None))
+        namespace='/contract_calibration_'+scenario;observer=Observer(namespace)
+        log=open(directory/'camera.log','w+')
+        parameters={'expected_calibration_sha256':'4'*64} if scenario=='conflicting_pin' else {}
+        if scenario=='accepted':
+            config=directory/'camera.yaml'
+            config.write_text(json.dumps({namespace+'/sensor':{'ros__parameters':dict(
+                source='local',endpoint=str(directory/'data.sock'),publish_points=True,point_stride=1)}}))
+            process=subprocess.Popen(['ros2','launch','nuvo_bringup','camera.launch.py',
+                'namespace:='+namespace,'name:=sensor','config:='+str(config),'calibration_file:='+str(bundle)],
+                stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
+        else:
+            process=start(binary,namespace,log,source='local',endpoint=directory/'data.sock',calibration_file=bundle,**parameters)
+        try:
+            assert control.received.wait(5),'no explicit native calibration request'
+            assert control.requests and set(control.requests[0])==set(members)
+            time.sleep(.3)
+            assert peer.connections==0,'measurement source connected before native verified activation'
+            assert not observer.messages['metadata']
+            control.release.set()
+            if scenario=='accepted':
+                observer.spin(lambda:observer.ready());observer.verify('local_boottime','2')
+            elif scenario in ('rejected','conflicting_pin'):
+                process.wait(5);assert process.returncode!=0,'native rejection did not fail startup'
+                assert peer.connections==0 and not observer.messages['metadata']
+                log.flush();log.seek(0);assert ('invalid_bundle' if scenario=='rejected' else 'conflicts with expected_calibration_sha256') in log.read()
+            else:
+                observer.spin(lambda:any('selection does not match' in status.message for status in observer.diagnostics))
+                assert not observer.messages['metadata'],'unselected calibration frame published'
+            assert len(control.requests)==1,'startup selection repeated during acquisition reconnect'
+        finally:
+            if process.poll() is None:stop(process)
+            peer.close();control.close();observer.node.destroy_node();log.close()
 def stop(process):
     os.killpg(process.pid,signal.SIGINT)
     try:process.wait(4)
@@ -465,5 +609,8 @@ def main():
         continuity_reconnect_and_idle(binary,root)
         optional_subscriber_demand(binary,root)
         replay_product_availability(binary,root)
-    rclpy.shutdown();print('ROS DDS replay, lazy pause, simulation timeline, receipt time, duplicate rejection, point cloud and local reconnect contracts passed')
+        startup_output_selection(binary,root)
+        startup_launch_controls(root)
+        startup_native_calibration(binary,root)
+    rclpy.shutdown();print('ROS DDS replay, timing, lazy output demand, typed launch startup, native calibration activation and local reconnect contracts passed')
 if __name__=='__main__':main()

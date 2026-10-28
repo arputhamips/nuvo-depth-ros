@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.1.2 — 2026-10-28
+
+- Expose typed output, requested cadence and calibration-bundle launch arguments,
+  retaining YAML settings when an argument is omitted. Depth topics can be
+  disabled independently of point clouds or rectified-image outputs.
+- Delegate explicit same-device calibration selection to native validation and
+  activation, then verify returned identity before publishing. Ordinary startup
+  preserves the camera's existing calibration and settings.
+- Add a same-device Docker helper that discovers the native numeric group and
+  mounts explicit configuration/calibration read-only. Compatible native builds
+  install the required socket and permissions automatically.
+- Publish the controls in `jazzy-0.1.2` for Linux AMD64 and ARM64. Native
+  `v0.1.1-beta.9` supplies matching-grid geometry, runtime permissions and local
+  calibration control in both full and minimal profiles. Older native beta 8
+  retains its geometry-override requirement and lacks bundle activation.
+- Add a no-build GitHub bootstrap that pulls the fixed release, obtains matching
+  deployment files from the image's source revision and runs by immutable image
+  digest through the existing helper. It discovers the numeric group without
+  manual `.env` setup, preserves user YAML across reruns and keeps calibration
+  selection empty/provisional publication disabled unless explicitly requested.
+- Host/container tests verify deployment contracts; they do not establish Pi
+  hardware qualification, sustained throughput or metric accuracy. See
+  [startup controls](docs/prototyping.md) for use and native compatibility.
+
 ## 0.1.1 — 2026-10-27
 
 - Treat subscriber disconnection during an in-flight frame as a demand pause,
