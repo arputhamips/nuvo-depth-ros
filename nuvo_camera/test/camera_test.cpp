@@ -47,6 +47,27 @@ TEST_F(CameraParameters, ValidatesPinsAndExplicitRecoveryPolicies) {
   EXPECT_FALSE(node.get_parameter("publish_left_rectified").as_bool());
   EXPECT_FALSE(node.get_parameter("publish_right_rectified").as_bool());
   EXPECT_FALSE(node.get_parameter("publish_disparity").as_bool());
+  EXPECT_TRUE(node.get_parameter("publish_depth").as_bool());
+  EXPECT_EQ(node.get_parameter("calibration_file").as_string(), "");
+}
+
+TEST_F(CameraParameters, RejectsNativeCalibrationOnUnsupportedSourcesBeforeAcquisition) {
+  for (const auto* source : {"https", "replay"})
+    EXPECT_THROW(nuvo_camera::NuvoCamera(options({
+        rclcpp::Parameter("source", source),
+        rclcpp::Parameter("recording", "unused.nvr"),
+        rclcpp::Parameter("calibration_file", "/unused/accepted.tar")})), std::invalid_argument);
+}
+
+TEST_F(CameraParameters, RejectsEmptyOutputSelectionAndKeepsStartupParametersReadOnly) {
+  EXPECT_THROW(nuvo_camera::NuvoCamera(options({rclcpp::Parameter("publish_depth", false)})), std::invalid_argument);
+  nuvo_camera::NuvoCamera node(options({
+      rclcpp::Parameter("publish_depth", false),
+      rclcpp::Parameter("publish_left_rectified", true)}));
+  for (const auto& parameter : {rclcpp::Parameter("cadence_hz", 7.5),
+       rclcpp::Parameter("publish_depth", true),
+       rclcpp::Parameter("calibration_file", "/new/accepted.tar")})
+    EXPECT_FALSE(node.set_parameter(parameter).successful);
 }
 
 TEST_F(CameraParameters, RejectsIncompatibleTimeSources) {
@@ -80,6 +101,9 @@ TEST_F(CameraParameters, KeepsSimulatedTimeFixedAfterStartup) {
 }
 
 TEST_F(CameraParameters, EnforcesRemoteCadenceWithinItsMessageDeadline) {
+  for (const auto cadence : {.0009, 60.001})
+    EXPECT_THROW(nuvo_camera::NuvoCamera(options({
+        rclcpp::Parameter("cadence_hz", cadence)})), std::invalid_argument);
   for (const auto cadence : {.001, std::nextafter(1.0 / 60.0, 0.0)})
     EXPECT_THROW(nuvo_camera::NuvoCamera(options({
                      rclcpp::Parameter("source", "https"),

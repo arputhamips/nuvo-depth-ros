@@ -14,7 +14,8 @@ RUN case "${NUVO_CLIENT_WITH_HTTPS}" in ON|OFF) ;; *) exit 2 ;; esac \
     build-essential cmake ninja-build python3-colcon-common-extensions \
     nlohmann-json3-dev "${https_deps[@]}" \
     ros-jazzy-rclcpp-components ros-jazzy-sensor-msgs ros-jazzy-diagnostic-msgs \
-    ros-jazzy-stereo-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest ros-jazzy-rmw-cyclonedds-cpp \
+    ros-jazzy-stereo-msgs ros-jazzy-rosgraph-msgs ros-jazzy-ament-cmake-gtest \
+    ros-jazzy-ament-cmake-python ros-jazzy-ament-cmake-pytest ros-jazzy-rmw-cyclonedds-cpp \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /ws
 COPY nuvo_depth_client_vendor src/nuvo_depth_client_vendor
@@ -41,6 +42,7 @@ RUN dpkg-query -W -f='${Package}\t${Version}\n' > /tmp/base-packages.tsv \
 ARG VCS_REF=unknown
 ARG DRIVER_VERSION=0.1.1
 LABEL org.nuvo.client.https="${NUVO_CLIENT_WITH_HTTPS}" \
+      org.nuvo.ros.launch-controls="1" \
       org.opencontainers.image.source="https://github.com/arputhamips/nuvo-depth-ros" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.version="${DRIVER_VERSION}" \

@@ -1,5 +1,8 @@
 # Use Nuvo Depth in your ROS project
 
+For current-source output/rate launch arguments, automatic same-Pi startup and
+explicit native calibration selection, see [robot prototyping](prototyping.md).
+
 This is a general-purpose **ROS 2 Jazzy camera driver**. It has no dependency on
 Nuvo Base, a particular robot model, navigation stack, controller or robot TF
 tree. Applications consume ordinary ROS messages; the optional Nuvo metadata

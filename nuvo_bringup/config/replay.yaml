@@ -8,5 +8,6 @@
     replay_rate: 1.0
     replay_loop: false
     publish_clock: false
+    publish_depth: true
     publish_points: false
     allow_provisional_calibration: false

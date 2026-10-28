@@ -34,7 +34,7 @@ def main():
                                   frame_id=f'camera_{index}_left_optical',
                                   right_frame_id=f'camera_{index}_right_optical',
                                   publish_points=True, point_stride=1,
-                                  publish_right_rectified=True)
+                                  publish_right_rectified=True, cadence_hz=6.25)
                 received[index] = {key: {} for key in ('depth', 'info', 'points', 'right', 'right_info')}
                 remappings = [('depth/image_rect', 'range/image'),
                               ('depth/camera_info', 'range/camera_info'), ('points', 'cloud')]
@@ -58,7 +58,7 @@ def main():
                         'ros__parameters': parameters}}))
                     command = ['ros2', 'launch', 'nuvo_bringup', 'camera.launch.py',
                                'namespace:=' + namespace, 'name:=depth_sensor',
-                               'config:=' + str(config)]
+                               'config:=' + str(config), 'cadence_hz:=7.5']
                 else:
                     launch = root / 'component.launch.py'
                     launch.write_text('''\
@@ -107,6 +107,8 @@ def generate_launch_description():
                 assert list(right.data) == [27, 28]
                 assert points.width == 2 and [field.name for field in points.fields] == ['x', 'y', 'z']
                 assert peers[index].subscriptions[-1]['products'] == 42
+                assert all(s['cadence_millihz'] == (6250 if index else 7500)
+                           for s in peers[index].subscriptions)
                 assert all(s['preview_cadence_millihz'] == 0 for s in peers[index].subscriptions)
             # The observer uses no Nuvo metadata subscription to obtain associated output.
             print('Two-camera standalone/component launch, remapping, optical frames and standard ROS consumers passed')

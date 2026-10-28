@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- Expose typed output, requested cadence and calibration-bundle launch arguments,
+  retaining YAML settings when an argument is omitted. Depth topics can be
+  disabled independently of point clouds or rectified-image outputs.
+- Delegate explicit same-device calibration selection to native validation and
+  activation, then verify returned identity before publishing. Ordinary startup
+  preserves the camera's existing calibration and settings.
+- Add a same-device Docker helper that discovers the native numeric group and
+  mounts explicit configuration/calibration read-only. Compatible native builds
+  install the required socket and permissions automatically.
+- These changes require newer native/ROS builds; the published v0.1.1 image
+  remains unchanged. See [prototyping controls](docs/prototyping.md).
+
 ## 0.1.1 — 2026-10-27
 
 - Treat subscriber disconnection during an in-flight frame as a demand pause,

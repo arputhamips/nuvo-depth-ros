@@ -2,8 +2,10 @@
 
 - Canonical acquisition, decoding and NVR1 support live in Nuvo Depth/sdk/cpp.
   Refresh the vendor snapshot with its exporter; do not hand-edit it.
-- Native Nuvo Depth owns cameras, matching and calibration. This ROS adapter
-  must not change device configuration on connection or require recalibration.
+- Native Nuvo Depth owns cameras, matching and calibration. Default connections
+  must not change device configuration or require recalibration. An explicitly
+  supplied calibration_file may request native bundle validation/activation via
+  its local control API; never implement calibration activation in the adapter.
 - Preserve calibration hash/authority, matching-grid geometry and capture identity.
 - Default deployment: native daemon on Pi OS Lite 64-bit; Ubuntu Jazzy container
   on the same Pi 5, with its runtime directory and numeric nuvo-video GID.

@@ -22,6 +22,11 @@ cameras. Use the [integration guide](docs/integration.md) for commissioning.
 
 See [how the same-Pi, Ethernet and USB-C paths communicate](docs/connections.md).
 
+Current-source development adds [startup controls for robot prototyping](docs/prototyping.md):
+automatic same-Pi group setup, output/rate launch arguments and explicit native
+calibration-bundle selection. These additions require compatible development
+builds and are not included in the v0.1.1 image below.
+
 Choose the [Pi Docker setup](#quick-start), an [Ubuntu Jazzy source build](docs/reference.md#source-build-and-development),
 a [remote HTTPS camera](docs/reference.md#remote-https), or [recording replay](docs/reference.md#nvr1-replay).
 ROS 1 and other ROS 2 distributions are not currently tested.

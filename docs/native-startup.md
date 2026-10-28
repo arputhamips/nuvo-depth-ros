@@ -7,6 +7,13 @@ or [minimal](https://github.com/arputhamips/nuvo-depth/blob/main/docs/minimal-in
 installation procedure before following the ROS quick start. Keep the installed
 profile and preserve existing calibration, camera geometry and exposure settings.
 
+Current native source also installs a read-only `nuvoctl ros environment --json`
+discovery command and a group-restricted calibration control socket. The
+[prototyping helper](prototyping.md) detects the native numeric group automatically.
+An explicit calibration bundle can be validated/activated by native before ROS
+acquisition; ordinary connections preserve the existing selection. These controls
+require newer builds than public native beta 8 and ROS v0.1.1.
+
 ## Check the native service
 
 Run on the Pi host, from this ROS repository:

@@ -3,7 +3,8 @@
   <name>nuvo_bringup</name><version>0.1.1</version>
   <description>Launch and conservative same-Pi Docker defaults for Nuvo ROS.</description>
   <maintainer email="nml@meridian.cv">NuvoHardware</maintainer><license>GPL-3.0-or-later</license>
-  <buildtool_depend>ament_cmake</buildtool_depend><exec_depend>nuvo_camera</exec_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend><buildtool_depend>ament_cmake_python</buildtool_depend>
+  <test_depend>ament_cmake_pytest</test_depend><exec_depend>nuvo_camera</exec_depend>
   <exec_depend>launch</exec_depend><exec_depend>launch_ros</exec_depend><exec_depend>ament_index_python</exec_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

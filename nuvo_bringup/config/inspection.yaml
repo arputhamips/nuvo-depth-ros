@@ -8,6 +8,8 @@
     # Explicit opt-in for provisional calibration in the inspection namespace.
     # Diagnostics continue to report calibration_qualified=false.
     allow_provisional_calibration: true
+    calibration_file: ""
+    publish_depth: true
     expected_device_uuid: ""
     expected_calibration_sha256: ""
     acquisition_restart_policy: accept
