@@ -35,6 +35,45 @@ needed by Compose. A provisional calibration notice is separate from startup
 success: ROS still requires an explicit preview opt-in. Do not relabel or replace
 calibration to make this check pass.
 
+## Slow boot or repeated trigger startup timeouts
+
+Check storage before changing camera settings or service deadlines:
+
+```bash
+sudo journalctl -b -u nuvo-depthd-native.service -u nuvo-trigger-prepare.service --no-pager
+systemd-analyze critical-chain
+sudo cat /sys/kernel/debug/mmc0/err_stats
+sudo nuvoctl diagnostics
+```
+
+The follow-up to the [28 October hardware test](validation-20261028.md) traced
+the native retries to SD/MMC I/O stalls: the native configuration process and
+Docker waited for mapped file pages while the SD controller completed no reads
+or writes for roughly 30 seconds. The controller recorded data timeouts even
+though the journal contained no matching I/O error message. A trigger-service
+timeout therefore does not by itself identify a GPIO fault.
+
+Counters cover the period since boot or their last reset. Collect them before
+resetting anything, check the card and power if they increase, and retest on
+healthy storage. Missing counters mean unavailable evidence, not a clean bill
+of health. Do not apply SD clock, voltage, network or kernel workarounds to every
+installation based on one device's symptoms.
+
+Native's current source adds `platform.storage` diagnostics and a small
+`depthd-config` utility for startup checks, using the existing canonical parser
+without loading the capture/image-processing libraries. These changes are not
+included in published beta 9 packages or the ROS Docker image. Install coherent
+native packages when a new native release is available; the ROS container does
+not provision the SD controller or own trigger startup.
+
+On the affected test Pi, SD high-speed compatibility mode corrected the observed
+stalls: two normal reboots took 53.3 and 52.6 seconds with zero native retries
+and zero recorded MMC errors. The final reboot included the native source fixes;
+all ROS outputs passed live validation afterward. The native
+[investigation and optional workaround](https://github.com/arputhamips/nuvo-depth/blob/main/docs/startup-storage-validation-20261028.md)
+records the exact tested scope, rollback and limitations. This is not a setting
+the ROS container applies automatically to other projects.
+
 ## GPIO 17 is already owned by PWM
 
 `failed to request the trigger GPIO line` with GPIO 17 owned by `pwm_pio` means

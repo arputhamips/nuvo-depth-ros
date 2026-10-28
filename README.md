@@ -19,8 +19,10 @@ delivery exposed a small host DDS receive-buffer cap; v0.1.3 configures the
 needed minimum automatically. Sustained performance and metric accuracy still
 need qualification. The earlier [Pi record](docs/validation-pi5-20261027.md)
 covers v0.1.1 and its own tested cohort.
-The latest test Pi recovered after four native trigger-preparation retries on
-reboot; the validation record documents this unresolved startup delay.
+The test Pi's four native startup retries were traced to SD/MMC I/O stalls.
+See [startup diagnostics](docs/native-startup.md#slow-boot-or-repeated-trigger-startup-timeouts)
+before changing camera settings. A device-specific SD workaround passed two
+subsequent reboots in about 53 seconds with zero native retries.
 The prebuilt image includes startup output/rate controls and explicit native
 calibration-bundle selection; no source build is needed. Native
 `v0.1.1-beta.9` is the compatible full/minimal camera release for these controls.

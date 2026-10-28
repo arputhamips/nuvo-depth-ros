@@ -10,7 +10,8 @@ limit. ROS **v0.1.3**, source
 [`eafd85a0ec9e631fc6971c0ba147c71397af1c8e`](https://github.com/arputhamips/nuvo-depth-ros/commit/eafd85a0ec9e631fc6971c0ba147c71397af1c8e),
 adds automatic host setup and a larger DDS receive request. Its public
 installation, eventual reboot recovery, **25 argument cases** and observation
-of the installed service passed. The startup limitation below remains open.
+of the installed service passed. The initial startup limitation and subsequent
+storage investigation are recorded below.
 Published v0.1.2 source, tag and image remain unchanged.
 
 ## Completed release checks
@@ -161,15 +162,71 @@ took 43.864 s to start. Previous shutdown logs show normal service stops,
 filesystem synchronization and journal closure. No fresh kernel MMC I/O error
 or `scheduling while atomic` warning appeared in the inspected boot journal.
 
-The available logs do not establish the cause of the broad startup stalls or
+The original logs did not establish the cause of the broad startup stalls or
 identify a concrete native trigger defect. Service/source review found no
 ordering cycle involving the new DDS unit. No network profile or startup
 timeout was changed to conceal these retries. This is evidence of eventual
 automatic recovery, not repeatable fast startup or cold-start qualification.
 
-## Final v0.1.3 camera tests
+### Subsequent startup investigation
 
-All **25 cases passed** on the published ARM64 image after reboot: 21 ordinary
+A later instrumented reboot reproduced three native retries and a 188.584 s
+systemd boot. A temporary in-memory sampler continued at approximately 0.5 s
+intervals while `depthd` waited in `filemap_fault`, PID 1 waited on ext4/journal
+writes, and MMC workers waited for I/O completion. Three 29–33 s windows had
+zero completed SD reads or writes and 94–98% CPU I/O wait. The trigger helper
+was waiting for its configuration-dump child to load libraries; it had not yet
+reached PIO setup.
+
+The SD controller's `err_stats` recorded **20 data timeouts**, despite no
+matching MMC I/O error in the boot journal. This establishes storage-path
+latency behind the observed startup failures. It does not distinguish a card,
+controller, power or signalling fault. No network timeout, camera configuration,
+calibration or service deadline was changed to hide the failures.
+
+Native source hardening adds a configuration-only executable using the same
+parser, immediate trigger-stage diagnostics and optional read-only MMC error
+reporting. These source changes are separate from immutable native beta 9 and
+ROS v0.1.3 releases. A device-specific SD compatibility experiment is not a
+general deployment default or proof that the underlying storage is healthy.
+
+The clock-only experiment did not lower the controller's actual 200 MHz clock.
+SD-slot-only 3.3 V high-speed mode then produced an actual 50 MHz clock while
+Wi-Fi remained on its separate 1.8 V DDR50 interface. Two normal reboots passed:
+
+| Native / SD setup | Systemd boot | Native restarts | Recorded MMC errors |
+| --- | ---: | ---: | ---: |
+| Published beta 9 with SD high-speed workaround | 53.333 s | 0 | 0 |
+| Native source fixes with the same workaround, temporary tracing removed | 52.639 s | 0 | 0 |
+
+The latter used native source
+`9b4be87882e82d0a529f827db7d566299a2997bd`. Its new utility was compiled on the Pi;
+configuration JSON, digests and successful check output matched the existing
+daemon byte-for-byte. The matching helper, native unit and diagnostics module
+were installed as a test candidate. The configuration query completed in
+0.395 s, trigger preparation finished at 12.807 s, and native became active at
+29.421 s. The released ROS container recovered automatically with zero restarts.
+
+Before and after the final reboot, the installed ROS service passed all-output
+observation: **51 coherent frame sets in each 20-second run**, approximately
+2.62–2.64 Hz at the unchanged 10 Hz ceiling. Checks covered depth, validity,
+CameraInfo, XYZ, left/right images, disparity, timestamps and preserved capture/
+calibration identity. Both runs added zero UDP receive-buffer errors. Native
+returned to idle after unsubscribe; trigger/frame-completion counters remained
+zero. Configuration, calibration and installed candidate checksums passed.
+
+The optional overlay source exactly matched the deployed overlay after
+compilation. Temporary strace and sampler units were removed. No network profile,
+camera calibration or release asset was changed. The
+[native investigation](https://github.com/arputhamips/nuvo-depth/blob/main/docs/startup-storage-validation-20261028.md)
+contains the storage evidence, optional workaround and full/minimal ARM64 build
+results. It distinguishes this tested device configuration from general hardware
+qualification.
+
+## Original v0.1.3 argument matrix, before the startup fixes
+
+All **25 cases passed** on the published ARM64 image after the original release
+reboot: 21 ordinary
 cases and four expected calibration-input rejections. The suite covered every
 output individually and combined; 1/2/5/10 Hz ceilings; YAML preservation and
 explicit overrides; namespace/domain/custom configuration; both launch files,
@@ -194,11 +251,13 @@ not establish physical distance accuracy. Host-wide UDP counters recorded
 **zero additional receive-buffer errors** over the full matrix; this is a
 bounded observation, not a lossless-delivery guarantee.
 
-The installed service remained running with zero container restarts after the
-test. Native trigger/frame-completion error counters were zero, and native
+The installed service remained running with zero container restarts after that
+original matrix. Native trigger/frame-completion error counters were zero, and native
 demand and matching returned to idle after subscribers left. Native's restart
-count remained four, matching the initial boot retries; it did not restart
-during the matrix. Audit containers were removed. Calibration/configuration
+count remained four on that earlier boot, matching its initial retries; it did
+not restart during the matrix. The later startup-fix reboot above had zero
+restarts and was checked with two all-output runs, rather than repeating all
+25 argument cases. Audit containers were removed. Calibration/configuration
 fingerprints remained unchanged. The container remains configured for all
 outputs, an explicit provisional-preview opt-in and a 10 Hz delivery ceiling.
 
@@ -219,8 +278,10 @@ unit UUIDs and calibration hashes/content are omitted from this public record.
   package/installer contracts passed hosted checks; this was not a fresh minimal
   hardware installation. The matrix samples output combinations and rate values,
   not every possible parameter value or deployment topology.
-- Four native startup retries and the broader boot delays remain unexplained.
-  Repeatable cold-start behavior, long-duration operation, independent
+- The native startup retries were subsequently traced to SD/MMC I/O stalls;
+  two software reboots passed with the device-specific SD workaround. The
+  underlying physical fault and long-term storage health remain unqualified.
+  Power-cycle behavior, long-duration operation, independent
   Ethernet/USB-C hardware combinations and alternate DDS implementations remain
   outside this physical test.
 
