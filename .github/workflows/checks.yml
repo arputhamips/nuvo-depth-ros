@@ -66,6 +66,8 @@ jobs:
           python3 test/refresh_sdk_test.py
           python3 test/native_preflight_test.py
           python3 test/run_camera_test.py
+          bash -n install-nuvo-depth-ros.sh
+          python3 test/bootstrap_test.py
           cmake -S nuvo_depth_client_vendor/upstream -B output/client -G Ninja -DNUVO_CLIENT_BUILD_TESTS=ON
           cmake --build output/client -j2
           ctest --test-dir output/client --output-on-failure

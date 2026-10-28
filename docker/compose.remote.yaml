@@ -1,6 +1,6 @@
 services:
   camera:
-    image: "${NUVO_IMAGE:-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.1}"
+    image: "${NUVO_IMAGE:-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.2}"
     # Linux host networking exposes ROS DDS on the computer running this driver.
     network_mode: host
     # Match the owner of the host's 0600 token file. No root runtime is needed.

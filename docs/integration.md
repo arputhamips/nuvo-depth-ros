@@ -10,8 +10,10 @@ integration.
 ## Pin a compatible deployment
 
 Record the approved driver commit, native runtime revision/package, Docker image
-identity, SDK manifest and calibration identity together. Build from that driver
-commit rather than an unrecorded moving checkout:
+identity, SDK manifest and calibration identity together. The
+[release bootstrap](../README.md#quick-start) pins its image digest and obtains
+deployment files at the image's source revision. For a source build, check out
+that recorded driver commit:
 
 ```bash
 git clone https://github.com/arputhamips/nuvo-depth-ros.git
@@ -20,13 +22,14 @@ DRIVER_REVISION=REPLACE_WITH_APPROVED_COMMIT
 git checkout --detach "$DRIVER_REVISION"
 ```
 
-Replace the placeholder with the reviewed commit. Follow the README to create
-`docker/.env`, build the image and supply the host's numeric `nuvo-video` GID.
+Replace the placeholder with the reviewed commit. The helper discovers the
+numeric `nuvo-video` group; manual Compose remains available in the
+[Docker guide](docker-image.md).
 
-Installing the adapter does not update the native runtime. There is no released
-minimum native version covering all these changes yet. Use a native revision
-with the required capabilities and record the tested revision from the
-[validation record](validation-20261026.md):
+Installing the adapter does not update the native runtime. Native
+`v0.1.1-beta.9` is the compatible full/minimal release for ROS v0.1.2, including
+matching geometry, runtime permissions and local calibration control. Record
+the actual installed revision and validate the required capabilities:
 
 - Depth/XYZ need matching-grid geometry. Public beta 8 needs the explicit
   hash/grid-matched [geometry override](reference.md#beta-8-and-older-recordings).

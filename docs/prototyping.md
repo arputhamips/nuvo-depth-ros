@@ -1,9 +1,9 @@
 # Startup controls for robot prototyping
 
-These controls are in the current source checkout. They are **not included in
-the published ROS v0.1.1 image or native beta 8 packages**. Use matching tested
-development packages/image until a release containing them is published. The
-native minimal and full packages share the camera pipeline and local control implementation.
+These controls are included in ROS **v0.1.2** / `jazzy-0.1.2` and native
+**v0.1.1-beta.9**. The native minimal and full packages share the camera pipeline
+and local control implementation. Native beta 8 lacks calibration control and
+retains its [geometry-override requirement](reference.md#beta-8-and-older-recordings).
 
 ## Run on the camera's Pi
 
@@ -15,16 +15,18 @@ No gateway, ROS installation on Pi OS, camera-device mounts or privileged
 container are needed. Camera overlays can still require the installer's reboot.
 Docker Engine/Compose must be installed on the host.
 
-From this checkout, with a compatible image available:
+Use the [no-build bootstrap](../README.md#quick-start) on the Pi:
 
 ```bash
-sudo python3 tools/run_camera.py --image nuvo-depth-ros:local \
-  --outputs depth,points --cadence-hz 10
+curl -fsSL https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.2/install-nuvo-depth-ros.sh \
+  | sudo bash -s -- --outputs depth,points --cadence-hz 10
 ```
 
+The bootstrap pins the image digest and deployment source revision, retains
+parameters in `/etc/nuvo-depth-ros/camera.yaml` and invokes `tools/run_camera.py`.
 The helper detects the numeric native group ID, checks native health and starts
 the existing Compose service. It does not create or overwrite `.env` or your
-parameter YAML. `--namespace robot/front`, `--ros-domain-id 42` and
+existing parameter YAML. `--namespace robot/front`, `--ros-domain-id 42` and
 `--config /path/to/camera.yaml` are optional. Without an explicit output/rate
 argument, the selected YAML remains authoritative. `--dry-run` prints the
 resolved deployment without starting a container.
@@ -36,20 +38,19 @@ remains selected when no calibration argument is supplied. An intentionally
 disabled capture policy remains disabled unless native setup or an explicit
 accepted calibration import enables it.
 
-Build the development image once if it has not been supplied as a tested image:
+With a v0.1.2 source checkout, you can invoke the helper directly instead:
 
 ```bash
-sudo docker build -f docker/Dockerfile -t nuvo-depth-ros:local .
+sudo python3 tools/run_camera.py --outputs depth,points --cadence-hz 10
 ```
 
-The released [v0.1.1 quick start](https://github.com/arputhamips/nuvo-depth-ros/tree/v0.1.1#quick-start)
-remains the no-build path for the existing release. The helper rejects startup
-controls on images without the required capability instead of silently ignoring
-them. Native beta 8 also retains its documented geometry-override requirement.
+It defaults to the prebuilt release image. `--image` can select an explicitly
+tested development image; the helper rejects images without startup-control
+support. See the [Docker guide](docker-image.md) for optional source builds.
 
 ## Launch directly in ROS
 
-In an environment with the current driver installed:
+In an environment with v0.1.2 installed:
 
 ```bash
 ros2 launch nuvo_bringup camera.launch.py \
@@ -97,7 +98,7 @@ JSON is not a native calibration bundle. Use the original per-unit bundle and
 preserve its validation, hashes and signatures.
 
 ```bash
-sudo python3 tools/run_camera.py --image nuvo-depth-ros:local \
+sudo bash install-nuvo-depth-ros.sh \
   --calibration-file /home/pi/calibration/front.tar \
   --outputs depth,points --cadence-hz 10
 ```
@@ -112,6 +113,10 @@ visible in its process/container:
 ```bash
 ros2 launch nuvo_bringup camera.launch.py calibration_file:=/calibration/front.tar
 ```
+
+The saved installer above comes from the [versioned download](../README.md#quick-start).
+For provisional inspection, explicitly add `--allow-provisional-calibration`;
+selecting a bundle does not implicitly enable provisional publication.
 
 Native Nuvo Depth validates the bundle, performs its existing activation and
 rollback transaction, and verifies fresh capture before returning success. ROS

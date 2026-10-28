@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "upstream_repository": "https://github.com/arputhamips/nuvo-depth",
-  "upstream_base_commit": "4a90e699646b4a22c5d0bac1b2a7013ca214f2ba",
+  "upstream_base_commit": "ce23f965f840d9a664f93bd71fa61aece3cf0101",
   "sdk_version": "0.1.0",
   "files": {
     "CMakeLists.txt": {

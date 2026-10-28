@@ -5,7 +5,7 @@ covers other sources, calibration compatibility and development. Commands below
 run in a sourced ROS 2 Jazzy environment; container paths must exist inside the
 container.
 
-Current-source [startup controls](prototyping.md) expose output selection,
+The v0.1.2 [startup controls](prototyping.md) expose output selection,
 requested cadence and explicit local native calibration activation as launch
 arguments. Omitted arguments preserve YAML and existing native configuration.
 
