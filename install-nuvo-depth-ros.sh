@@ -4,7 +4,7 @@
 set -euo pipefail
 umask 022
 
-VERSION=0.1.2
+VERSION=0.1.3
 REPOSITORY=ghcr.io/arputhamips/nuvo-depth-ros
 IMAGE="$REPOSITORY:jazzy-$VERSION"
 INSTALL_DIR=/opt/nuvo-depth-ros
@@ -15,7 +15,7 @@ ARGS=()
 fail() { printf 'Cannot install Nuvo ROS: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
-Install Nuvo Depth ROS 2 v0.1.2 on the Linux camera host (run with sudo).
+Install Nuvo Depth ROS 2 v0.1.3 on the Linux camera host (run with sudo).
 Requires working native Nuvo Depth beta 9+, Docker Engine + Compose, Python 3,
 curl and tar. No host ROS installation or image build is needed.
 
@@ -31,12 +31,15 @@ Usage: sudo bash install-nuvo-depth-ros.sh [options]
   --ros-domain-id ID       ROS domain (0..232)
   --calibration-file PATH  Explicit native bundle selection; omitted preserves it
   --allow-provisional-calibration  Explicit preview opt-in; authority is unchanged
-  --dry-run               Print deployment; no container start/calibration activation
+  --dry-run               Inspect deployment; no host tuning, ROS start or activation
   --help                  Show this help
 
 Unspecified output/rate settings retain the selected YAML. The first install
 copies safe defaults into /etc/nuvo-depth-ros/camera.yaml only if it is absent;
 later runs preserve it. Pass the same launch options when reconfiguring.
+The shared helper ensures a host DDS receive maximum of at least 8 MiB now and
+at boot, preserving higher limits and default buffers. --dry-run reports that
+plan without applying it; image/source caching and initial YAML creation remain.
 EOF
 }
 

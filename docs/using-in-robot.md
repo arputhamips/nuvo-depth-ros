@@ -1,6 +1,6 @@
 # Use Nuvo Depth in your ROS project
 
-For v0.1.2 output/rate launch arguments, automatic same-Pi startup and
+For v0.1.3 output/rate launch arguments, automatic same-Pi startup and
 explicit native calibration selection, see [robot prototyping](prototyping.md).
 
 This is a general-purpose **ROS 2 Jazzy camera driver**. It has no dependency on
@@ -84,6 +84,11 @@ The configuration path is inside the container. Topic namespaces and frame IDs
 are independent: choosing a namespace does not rename frames.
 
 ## Receive standard ROS topics
+
+Cyclone DDS consumers should load the [provided profile](reference.md#dds-transport)
+before startup; it requests an 8 MiB receive buffer for image/cloud bursts.
+The camera container loads it automatically. Subscriber computers need a suitable
+host receive limit too; the same-Pi helper prepares the camera host's limit.
 
 With the namespace above, these are the usual inputs to a robot application:
 

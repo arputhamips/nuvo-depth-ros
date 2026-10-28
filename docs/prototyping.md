@@ -1,6 +1,6 @@
 # Startup controls for robot prototyping
 
-These controls are included in ROS **v0.1.2** / `jazzy-0.1.2` and native
+These controls are included in ROS **v0.1.3** / `jazzy-0.1.3` and native
 **v0.1.1-beta.9**. The native minimal and full packages share the camera pipeline
 and local control implementation. Native beta 8 lacks calibration control and
 retains its [geometry-override requirement](reference.md#beta-8-and-older-recordings).
@@ -18,7 +18,7 @@ Docker Engine/Compose must be installed on the host.
 Use the [no-build bootstrap](../README.md#quick-start) on the Pi:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.2/install-nuvo-depth-ros.sh \
+curl -fsSL https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.3/install-nuvo-depth-ros.sh \
   | sudo bash -s -- --outputs depth,points --cadence-hz 10
 ```
 
@@ -31,6 +31,19 @@ existing parameter YAML. `--namespace robot/front`, `--ros-domain-id 42` and
 argument, the selected YAML remains authoritative. `--dry-run` prints the
 resolved deployment without starting a container.
 
+The same helper prepares a host DDS receive-buffer minimum of 8 MiB by raising
+only `net.core.rmem_max` when needed. It installs the root-owned
+`nuvo-depth-ros-network.service`, ordered after normal sysctl setup and before
+Docker at boot. Higher limits and default socket buffers are preserved. The
+helper recreates the ROS container on every explicit launch so DDS opens new
+sockets, including retries after a failed start. Run it with `sudo`; it reports
+setup errors before starting Compose. `--dry-run` reports this host plan on
+stderr while keeping the resolved Compose JSON on stdout, and does not write a
+unit or change the kernel limit. The bundled Cyclone DDS profile requests an
+8 MiB receive buffer to use the prepared host limit. Consumers also need the
+profile and a suitable receive limit on their own host; the camera container
+loads the profile automatically. See [DDS transport](reference.md#dds-transport).
+
 For a fresh unit using the shared provisional seed, explicitly add
 `--allow-provisional-calibration` for inspection. This permits publication; it
 does not establish distance accuracy. Existing validated per-unit calibration
@@ -38,7 +51,7 @@ remains selected when no calibration argument is supplied. An intentionally
 disabled capture policy remains disabled unless native setup or an explicit
 accepted calibration import enables it.
 
-With a v0.1.2 source checkout, you can invoke the helper directly instead:
+With a v0.1.3 source checkout, you can invoke the helper directly instead:
 
 ```bash
 sudo python3 tools/run_camera.py --outputs depth,points --cadence-hz 10
@@ -50,7 +63,7 @@ support. See the [Docker guide](docker-image.md) for optional source builds.
 
 ## Launch directly in ROS
 
-In an environment with v0.1.2 installed:
+In an environment with v0.1.3 installed:
 
 ```bash
 ros2 launch nuvo_bringup camera.launch.py \

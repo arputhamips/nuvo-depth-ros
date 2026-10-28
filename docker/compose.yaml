@@ -1,6 +1,6 @@
 services:
   camera:
-    image: "${NUVO_IMAGE:-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.2}"
+    image: "${NUVO_IMAGE:-ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.3}"
     build:
       context: ..
       dockerfile: docker/Dockerfile

@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.1.3 — 2026-10-28
+
+- Prepare the same-Pi host for DDS image delivery by raising only
+  `net.core.rmem_max` to at least 8 MiB, preserving higher values. The shared
+  launcher installs a conditional boot service after normal sysctl setup and
+  before Docker, so restarts retain the minimum without replacing higher
+  administrator settings. Default receive/send buffers stay unchanged.
+- Request an 8 MiB receive buffer in the supplied Cyclone DDS profile for
+  image/cloud bursts. The minimum remains `default`, allowing startup on hosts
+  with smaller caps. Consumers need the same profile and suitable host limit;
+  the camera container loads the profile automatically.
+- Recreate the ROS container on every explicit helper launch so DDS reopens its
+  sockets, including retries after an interrupted setup. Host setup failures
+  stop before container startup; helper `--dry-run` reports the plan without
+  changing host configuration.
+- Keep the public bootstrap delegated to the same helper and publish the patch
+  as `jazzy-0.1.3`. Native `v0.1.1-beta.9`, calibration ownership and the
+  unprivileged container deployment are unchanged. See the
+  [validation record](docs/validation-20261028.md) for bounded Pi evidence;
+  host/container tests alone do not establish hardware qualification.
+
 ## 0.1.2 — 2026-10-28
 
 - Expose typed output, requested cadence and calibration-bundle launch arguments,

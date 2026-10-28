@@ -7,5 +7,11 @@
       <MaxMessageSize>1400B</MaxMessageSize>
       <FragmentSize>1200B</FragmentSize>
     </General>
+    <Internal>
+      <!-- Absorb full image/cloud bursts; the host helper permits this request.
+           Keep startup portable when a subscriber host has a smaller limit.
+           Consumers should load this profile and prepare their own host limit. -->
+      <SocketReceiveBufferSize min="default" max="8MiB"/>
+    </Internal>
   </Domain>
 </CycloneDDS>

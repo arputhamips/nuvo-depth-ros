@@ -14,7 +14,7 @@ import xml.etree.ElementTree as ET
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / 'install-nuvo-depth-ros.sh'
 PACKAGES = ('nuvo_camera', 'nuvo_camera_msgs', 'nuvo_bringup', 'nuvo_depth_client_vendor')
-VERSION = '0.1.2'
+VERSION = '0.1.3'
 REVISION = 'a' * 40
 REPOSITORY = 'ghcr.io/arputhamips/nuvo-depth-ros'
 DIGEST = REPOSITORY + '@sha256:' + 'b' * 64

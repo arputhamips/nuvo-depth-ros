@@ -27,7 +27,7 @@ numeric `nuvo-video` group; manual Compose remains available in the
 [Docker guide](docker-image.md).
 
 Installing the adapter does not update the native runtime. Native
-`v0.1.1-beta.9` is the compatible full/minimal release for ROS v0.1.2, including
+`v0.1.1-beta.9` is the compatible full/minimal release for ROS v0.1.3, including
 matching geometry, runtime permissions and local calibration control. Record
 the actual installed revision and validate the required capabilities:
 

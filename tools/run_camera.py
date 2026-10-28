@@ -19,6 +19,12 @@ OUTPUTS = {'depth': 'publish_depth', 'points': 'publish_points',
 CONTROLS_LABEL = 'org.nuvo.ros.launch-controls'
 BUNDLE_FILES = ('manifest.json', 'front_left.yaml', 'front_right.yaml', 'validation.json')
 INPUT_CACHE = Path('/var/cache/nuvo-depth-ros/inputs')
+RMEM_MAX = Path('/proc/sys/net/core/rmem_max')
+DDS_RECEIVE_MINIMUM = 8 * 1024 * 1024
+DDS_HOST_UNIT = Path('/etc/systemd/system/nuvo-depth-ros-network.service')
+SYSTEMD_UNIT_DIRS = tuple(Path(path) for path in (
+    '/etc/systemd/system', '/run/systemd/system', '/usr/local/lib/systemd/system',
+    '/usr/lib/systemd/system', '/lib/systemd/system'))
 
 
 def output_selection(value):
@@ -48,12 +54,100 @@ def parser():
                         help='Explicitly permit unqualified preview; preserves calibration authority.')
     result.add_argument('--calibration-file', type=Path,
                         help='Explicit native stereo bundle directory or .tar; changes the camera selection.')
-    result.add_argument('--dry-run', action='store_true', help='Inspect native readiness and print resolved deployment only.')
+    result.add_argument('--dry-run', action='store_true',
+                        help='Inspect native/host readiness and deployment; do not change host setup or start ROS.')
     return result
 
 
 def run(command, **kwargs):
     return subprocess.run(command, check=True, text=True, **kwargs)
+
+
+def host_network_unit():
+    """Keep the boot action self-contained; never execute a mutable checkout."""
+    code = ('from pathlib import Path; '
+            f'p=Path({str(RMEM_MAX)!r}); n=int(p.read_text()); '
+            f'p.write_text(str({DDS_RECEIVE_MINIMUM})) if n < {DDS_RECEIVE_MINIMUM} else None')
+    # systemd parses C-style quoting and expands $/%. All input is local constants.
+    quoted = json.dumps(code).replace('$', '$$').replace('%', '%%')
+    return ('# Managed by Nuvo Depth ROS host setup.\n'
+            '[Unit]\nDescription=Nuvo ROS DDS receive-buffer minimum\n'
+            'After=systemd-sysctl.service\nBefore=docker.service\n\n'
+            '[Service]\nType=oneshot\n'
+            f'ExecStart=/usr/bin/python3 -c {quoted}\n'
+            'RemainAfterExit=yes\n\n[Install]\nWantedBy=multi-user.target\n')
+
+
+def check_host_unit(path, expected):
+    """Refuse redirects, writable boot code and unrelated administrator units."""
+    path = path.absolute()
+    for parent in (path.parent, *path.parent.parents):
+        info = parent.lstat()
+        sticky_ancestor = parent != path.parent and info.st_mode & stat.S_ISVTX
+        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or
+                (info.st_mode & 0o022 and not sticky_ancestor)):
+            raise ValueError(f'Host DDS unit needs root-owned directories without unsafe write access: {parent}')
+    # A drop-in can replace ExecStart/User despite an intact managed base file.
+    # Leave administrator configuration untouched and refuse to execute it.
+    for directory in (path.parent, *SYSTEMD_UNIT_DIRS):
+        dropins = directory / (path.name + '.d')
+        if dropins.is_symlink() or any(dropins.glob('*.conf')):
+            raise ValueError(f'Host DDS unit has administrator drop-ins; inspect {dropins}')
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    if (not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or
+            info.st_mode & 0o022 or info.st_nlink != 1):
+        raise ValueError(f'Unsafe host DDS unit: {path}')
+    if path.read_text() != expected:
+        raise ValueError(f'Existing host DDS unit differs from the managed setup; inspect {path}')
+    return True
+
+
+def prepare_host_network(*, dry_run=False):
+    """Ensure a receive-buffer floor now and at boot without lowering a limit.
+
+    A sysctl assignment could replace a higher administrator value at boot.
+    The one-shot runs its conditional after normal sysctl setup, before Docker.
+    It changes only rmem_max; default buffers and camera settings stay intact.
+    """
+    before = int(RMEM_MAX.read_text())
+    if before <= 0:
+        raise ValueError('Host net.core.rmem_max must be a positive integer')
+    expected = host_network_unit()
+    existing = check_host_unit(DDS_HOST_UNIT, expected)
+    print(f'Host DDS receive limit: {before} bytes; minimum {DDS_RECEIVE_MINIMUM}; '
+          f'boot unit {DDS_HOST_UNIT}' + (' (dry run; no changes)' if dry_run else ''),
+          file=sys.stderr)
+    if dry_run:
+        return
+    if os.geteuid() != 0:
+        raise ValueError('Run the helper with sudo to configure the host DDS receive limit and boot unit')
+    if not existing:
+        temporary = None
+        try:
+            with tempfile.NamedTemporaryFile(dir=DDS_HOST_UNIT.parent, prefix='.nuvo-ros-network.',
+                                             mode='w', delete=False) as stream:
+                temporary = Path(stream.name)
+                stream.write(expected)
+                stream.flush()
+                os.fsync(stream.fileno())
+                os.fchmod(stream.fileno(), 0o644)
+            try:
+                os.link(temporary, DDS_HOST_UNIT)
+            except FileExistsError:
+                check_host_unit(DDS_HOST_UNIT, expected)
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
+    # Repeat these after an interrupted setup too; an existing file does not
+    # prove that systemd loaded, enabled or successfully ran it previously.
+    run(['systemctl', 'daemon-reload'])
+    run(['systemctl', 'enable', '--quiet', DDS_HOST_UNIT.name])
+    run(['systemctl', 'restart', DDS_HOST_UNIT.name])
+    if int(RMEM_MAX.read_text()) < DDS_RECEIVE_MINIMUM:
+        raise ValueError('Host DDS receive limit is still below the required minimum')
 
 
 def overrides(args):
@@ -159,7 +253,8 @@ def main(argv=None):
     # A requested bundle can enable previously deferred capture through native
     # validation. Otherwise check service health, fresh status, PIO and access.
     if args.calibration_file is None:
-        run([sys.executable, str(ROOT / 'tools/check_native.py')])
+        run([sys.executable, str(ROOT / 'tools/check_native.py')],
+            stdout=sys.stderr if args.dry_run else None)
     else:
         runtime = Path('/run/nuvo-depth').stat()
         control = Path('/run/nuvo-depth/calibration.sock').stat()
@@ -176,6 +271,7 @@ def main(argv=None):
     document = json.loads(run(base + ['config', '--format', 'json'], env=environment, capture_output=True).stdout)
     if args.dry_run:
         configure(document, args)
+        prepare_host_network(dry_run=True)
         print(json.dumps(document, indent=2))
         return 0
     image = document['services']['camera']['image']
@@ -194,12 +290,15 @@ def main(argv=None):
             setattr(args, option, snapshot_input(source, INPUT_CACHE,
                                                  bundle=option == 'calibration_file', gid=gid))
     configure(document, args)
+    prepare_host_network()
     # Compose already resolved relative paths against its original directory.
     # A temporary JSON override avoids editing .env, YAML or user calibration.
     with tempfile.TemporaryDirectory(prefix='nuvo-ros-') as directory:
         path = Path(directory) / 'compose.json'
         path.write_text(json.dumps(document))
-        run(compose + ['-f', str(path), 'up', '-d', '--no-build'], env=environment)
+        # Reopen DDS sockets on every explicit launch, including retries after
+        # a failed Compose start following successful host buffer preparation.
+        run(compose + ['-f', str(path), 'up', '-d', '--no-build', '--force-recreate'], env=environment)
     print('Started. Logs: sudo env ' + shlex.quote(f'NUVO_VIDEO_GID={gid}') + ' ' +
           shlex.join(base + ['logs', '--tail=50', 'camera']))
     return 0

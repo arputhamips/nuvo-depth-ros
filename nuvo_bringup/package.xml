@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>nuvo_bringup</name><version>0.1.2</version>
+  <name>nuvo_bringup</name><version>0.1.3</version>
   <description>Launch and conservative same-Pi Docker defaults for Nuvo ROS.</description>
   <maintainer email="nml@meridian.cv">NuvoHardware</maintainer><license>GPL-3.0-or-later</license>
   <buildtool_depend>ament_cmake</buildtool_depend><buildtool_depend>ament_cmake_python</buildtool_depend>

@@ -12,7 +12,7 @@ discovery command and a group-restricted calibration control socket. The
 [prototyping helper](prototyping.md) detects the native numeric group automatically.
 An explicit calibration bundle can be validated/activated by native before ROS
 acquisition; ordinary connections preserve the existing selection. Use ROS
-`v0.1.2` with native beta 9 for these controls. The pinned native
+`v0.1.3` with native beta 9 for these controls. The pinned native
 [full installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth.sh)
 or [minimal installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth-minimal.sh)
 upgrades the corresponding installed profile; keep that profile and existing

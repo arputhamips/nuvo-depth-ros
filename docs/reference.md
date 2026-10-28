@@ -5,7 +5,7 @@ covers other sources, calibration compatibility and development. Commands below
 run in a sourced ROS 2 Jazzy environment; container paths must exist inside the
 container.
 
-The v0.1.2 [startup controls](prototyping.md) expose output selection,
+The v0.1.3 [startup controls](prototyping.md) expose output selection,
 requested cadence and explicit local native calibration activation as launch
 arguments. Omitted arguments preserve YAML and existing native configuration.
 
@@ -401,7 +401,14 @@ The [supplied profile](../nuvo_bringup/config/cyclonedds.xml) sets
 `MaxMessageSize` to `1400B` and `FragmentSize` to `1200B`. This lets DDS fragment
 large images and clouds while keeping UDP datagrams within an ordinary
 1500-byte Ethernet MTU, avoiding dependence on IP reassembly. Interface
-selection, discovery and socket buffers retain their defaults.
+selection and discovery retain their defaults.
+
+The same profile sets `Internal/SocketReceiveBufferSize` to
+`min="default" max="8MiB"`: Cyclone DDS requests an 8 MiB socket receive buffer
+to absorb image/cloud bursts. The default minimum accepts a smaller available
+buffer, keeping startup portable on untuned hosts; delivery can still lose
+samples there. The host receive maximum and each DDS participant's requested
+buffer both matter.
 
 For a source workspace, set the profile before starting ROS participants, from
 the repository root after sourcing the workspace:
@@ -412,12 +419,31 @@ export CYCLONEDDS_URI="file://$PWD/nuvo_bringup/config/cyclonedds.xml"
 ```
 
 Use an absolute profile path without spaces. Apply the profile to publishers
-and consumers during initial qualification. The host full-size test passed
-with automatic interface selection and original `rmem_max`/`wmem_max` values of
-212992; a permanent host buffer increase is not part of this fix. Network
-discovery, firewalls, effective MTU and transport selection still need checking
-for each deployment. This DDS configuration is separate from the local Nuvo
-Unix-socket/memfd acquisition path.
+and consumers during initial qualification. Earlier host full-size tests passed
+with receive/send limits of 212992 bytes, but actual Pi image delivery exposed
+UDP receive-buffer drops at that receive cap. The v0.1.3 same-Pi helper now
+ensures `net.core.rmem_max` is at least 8388608 bytes before launch. Cyclone DDS
+can then obtain its requested buffer without the small host cap; this changes a
+maximum, not the default allocation for every socket.
+
+The root-owned `nuvo-depth-ros-network.service` repeats the conditional increase
+after `systemd-sysctl.service` and before Docker at boot. It never lowers an
+existing value, including a higher administrator value loaded at boot. The
+helper leaves `rmem_default`, `wmem_max` and `wmem_default` unchanged. Every
+explicit launch recreates the ROS container because existing DDS sockets retain
+their previous buffer sizes; retries after a failed start also reopen them.
+Helper `--dry-run` reads and reports the host plan without installing the unit
+or changing limits.
+An unsafe/unmanaged unit or failed setup blocks container startup.
+
+Apply the provided XML to Cyclone DDS publishers and consumers before creating
+their ROS participants; the camera container already loads it. Remote DDS
+subscriber computers also need suitable receive limits on their own hosts.
+Network discovery, firewalls, effective MTU and transport selection still
+need checking for each deployment. This host DDS setup is separate from the
+local Nuvo Unix-socket/memfd acquisition path. See the
+[Pi validation record](validation-20261028.md) for the bounded receive-buffer A/B
+test and remaining qualification limits.
 
 An existing robot can retain Fast DDS with its independently qualified profile.
 This record does not qualify Fast DDS; no Fast DDS example is supplied.
