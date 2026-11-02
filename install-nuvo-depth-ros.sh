@@ -4,7 +4,7 @@
 set -euo pipefail
 umask 022
 
-VERSION=0.1.3
+VERSION=0.1.4
 REPOSITORY=ghcr.io/arputhamips/nuvo-depth-ros
 IMAGE="$REPOSITORY:jazzy-$VERSION"
 INSTALL_DIR=/opt/nuvo-depth-ros
@@ -15,7 +15,7 @@ ARGS=()
 fail() { printf 'Cannot install Nuvo ROS: %s\n' "$*" >&2; exit 1; }
 usage() {
     cat <<'EOF'
-Install Nuvo Depth ROS 2 v0.1.3 on the Linux camera host (run with sudo).
+Install Nuvo Depth ROS 2 v0.1.4 on the Linux camera host (run with sudo).
 Requires working native Nuvo Depth beta 9+, Docker Engine + Compose, Python 3,
 curl and tar. No host ROS installation or image build is needed.
 

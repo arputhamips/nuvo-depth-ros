@@ -1,6 +1,6 @@
 # Use Nuvo Depth in your ROS project
 
-For v0.1.3 output/rate launch arguments, automatic same-Pi startup and
+For v0.1.4 output/rate launch arguments, automatic same-Pi startup and
 explicit native calibration selection, see [robot prototyping](prototyping.md).
 
 This is a general-purpose **ROS 2 Jazzy camera driver**. It has no dependency on
@@ -21,7 +21,7 @@ USB Ethernet details, and [prebuilt Docker images](docker-image.md) to skip buil
 | ROS computer connected to a remote camera | [HTTPS source](reference.md#remote-https); remote headers use receipt time |
 | Developing without a camera | [NVR1 replay](reference.md#nvr1-replay), using an existing compatible recording |
 
-Native Nuvo Depth beta 9 supplies the geometry and local control needed by this
+Native Nuvo Depth beta 10 supplies the geometry and local control needed by this
 release. It must already have usable calibration. Public camera beta 8 needs the explicit
 [matching-grid override](reference.md#beta-8-and-older-recordings) for depth.
 Installing this adapter does not install or upgrade the native camera software.

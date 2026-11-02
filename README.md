@@ -8,15 +8,17 @@ Applications can use standard ROS messages without the optional Nuvo metadata.
 The default setup runs ROS in Docker on the same Raspberry Pi 5 as the native
 Nuvo daemon; it leaves camera capture, matching and calibration to Nuvo Depth.
 
-The [v0.1.3 release](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.3)
+The [v0.1.4 release](https://github.com/arputhamips/nuvo-depth-ros/releases/tag/v0.1.4)
 provides source and a [prebuilt Docker image](docs/docker-image.md) for Pi ARM64
 and Linux PC AMD64. There is no released ROS APT package; local source builds
 remain supported. See the [changelog](CHANGELOG.md) for features and limitations.
-[Release validation](docs/validation-20261028.md) covers AMD64/ARM64 builds,
-container checks, public downloads, public installation and 25 camera argument
-cases on the Pi. Actual Pi
-delivery exposed a small host DDS receive-buffer cap; v0.1.3 configures the
-needed minimum automatically. Sustained performance and metric accuracy still
+[Earlier release validation](docs/validation-20261028.md) covers the v0.1.3
+AMD64/ARM64 builds, public installation and 25 camera argument cases on the Pi.
+That investigation exposed a small host DDS receive-buffer cap; v0.1.4 retains
+the automatic minimum introduced in v0.1.3. The v0.1.4 release repackages the
+same ROS implementation with the startup investigation and refreshed deployment
+defaults, alongside native beta 10's startup fixes. Its release notes identify
+the exact tested source and image. Sustained performance and metric accuracy still
 need qualification. The earlier [Pi record](docs/validation-pi5-20261027.md)
 covers v0.1.1 and its own tested cohort.
 The test Pi's four native startup retries were traced to SD/MMC I/O stalls.
@@ -25,7 +27,9 @@ before changing camera settings. A device-specific SD workaround passed two
 subsequent reboots in about 53 seconds with zero native retries.
 The prebuilt image includes startup output/rate controls and explicit native
 calibration-bundle selection; no source build is needed. Native
-`v0.1.1-beta.9` is the compatible full/minimal camera release for these controls.
+`v0.1.1-beta.10` is the recommended full/minimal camera release. It includes the
+lightweight startup configuration helper, bounded configuration checks and
+read-only storage diagnostics; beta 9 remains compatible with the ROS controls.
 New to the driver? Follow [Use Nuvo Depth in your ROS project](docs/using-in-robot.md)
 for custom namespaces, frames, topic remaps, a Python subscriber, RViz and multiple
 cameras. Use the [integration guide](docs/integration.md) for commissioning.
@@ -46,14 +50,14 @@ Run these commands on the **Pi host**, locally or over SSH. You need:
 - Raspberry Pi OS Lite 64-bit with native Nuvo Depth already working, using the
   [full](https://docs.nuvohardware.com/vision-one/install/byo-pi) or
   [minimal](https://docs.nuvohardware.com/vision-one/install/minimal) installation.
-  The beta 9 [full installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth.sh)
-  and [minimal installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth-minimal.sh)
+  The beta 10 [full installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.10/install-nuvo-depth.sh)
+  and [minimal installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.10/install-nuvo-depth-minimal.sh)
   are pinned release downloads; upgrade within the profile already installed.
 - Python 3, curl, tar, [Docker Engine and the Compose plugin](https://docs.docker.com/engine/install/debian/).
   ROS runs inside the Ubuntu 24.04 / Jazzy container; no host ROS install is needed.
 - The unit's existing calibration. Preserve validated per-unit bundles; a ROS
   installation or software upgrade does not require recalibration.
-- Native **v0.1.1-beta.9** in the profile already installed. It supplies geometry,
+- Native **v0.1.1-beta.10** in the profile already installed. It supplies geometry,
   runtime permissions and local calibration control. Its supported Pi kernel is
   **`6.12.75+rpt-rpi-2712`**; check with `uname -r` before installation.
   Older beta 8 needs the
@@ -74,11 +78,11 @@ sudo docker compose version
 Download and run the fixed release installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.3/install-nuvo-depth-ros.sh \
+curl -fsSL https://github.com/arputhamips/nuvo-depth-ros/releases/download/v0.1.4/install-nuvo-depth-ros.sh \
   | sudo bash -s -- --outputs depth,points --cadence-hz 10
 ```
 
-This pulls `ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.3`, downloads deployment
+This pulls `ghcr.io/arputhamips/nuvo-depth-ros:jazzy-0.1.4`, downloads deployment
 files at the image's recorded source revision into `/opt/nuvo-depth-ros/releases/`
 and pins the container to that image digest. The existing helper discovers the
 numeric `nuvo-video` group, checks native health and starts Compose. No build,
@@ -114,7 +118,7 @@ To review the script before running it, save the same versioned URL:
 
 ```bash
 curl -fsSL -o install-nuvo-depth-ros.sh \
-  https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.3/install-nuvo-depth-ros.sh
+  https://github.com/arputhamips/nuvo-depth-ros/releases/download/v0.1.4/install-nuvo-depth-ros.sh
 less install-nuvo-depth-ros.sh
 sudo bash install-nuvo-depth-ros.sh --outputs depth,points --cadence-hz 10
 sudo docker logs --tail=50 docker-camera-1
@@ -243,10 +247,10 @@ already omits it. Keep networking for DDS and SSH. See
 | --- | --- |
 | Node runs but no images arrive | Start a measurement subscriber with best-effort QoS; topic discovery alone does not activate the lazy driver. |
 | Native fails to request the trigger GPIO line | Follow [GPIO/PWM recovery](docs/native-startup.md#gpio-17-is-already-owned-by-pwm); upgrade the native startup components together. ROS does not own GPIO. |
-| Idle v0.1.0 reports `no_usable_measurement_products` | Upgrade to the prebuilt v0.1.3 image. Disconnection should report waiting for subscribers and `output_available=false`. |
+| Idle v0.1.0 reports `no_usable_measurement_products` | Upgrade to the prebuilt v0.1.4 image. Disconnection should report waiting for subscribers and `output_available=false`. |
 | Missing geometry or provisional-calibration diagnostic | Follow the [beta 8 compatibility instructions](docs/reference.md#beta-8-and-older-recordings). An override must match the actual hash/grid and cannot validate provisional calibration. |
 | Socket missing or permission denied | Check the native service, socket and `nuvo-video` GID. Older native units or manual runtime-directory removal can leave a stale container mount. |
-| Images lose frames despite native delivery | Rerun the v0.1.3 bootstrap/helper with the same options to prepare the host DDS receive limit; inspect `systemctl status nuvo-depth-ros-network.service`. Each remote subscriber host needs suitable DDS buffers too. |
+| Images lose frames despite native delivery | Rerun the v0.1.4 bootstrap/helper with the same options to prepare the host DDS receive limit; inspect `systemctl status nuvo-depth-ros-network.service`. Each remote subscriber host needs suitable DDS buffers too. |
 | Another ROS machine cannot discover topics | Match `ROS_DOMAIN_ID`, QoS and the robot's DDS/network settings. The Nuvo gateway does not carry DDS traffic. |
 
 Updated native full/minimal units preserve the runtime directory across ordinary

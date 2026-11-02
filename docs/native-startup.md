@@ -7,14 +7,14 @@ or [minimal](https://github.com/arputhamips/nuvo-depth/blob/main/docs/minimal-in
 installation procedure before following the ROS quick start. Keep the installed
 profile and preserve existing calibration, camera geometry and exposure settings.
 
-Native `v0.1.1-beta.9` also installs a read-only `nuvoctl ros environment --json`
+Native `v0.1.1-beta.10` also installs a read-only `nuvoctl ros environment --json`
 discovery command and a group-restricted calibration control socket. The
 [prototyping helper](prototyping.md) detects the native numeric group automatically.
 An explicit calibration bundle can be validated/activated by native before ROS
 acquisition; ordinary connections preserve the existing selection. Use ROS
-`v0.1.3` with native beta 9 for these controls. The pinned native
-[full installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth.sh)
-or [minimal installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.9/install-nuvo-depth-minimal.sh)
+`v0.1.4` with native beta 10 for these controls. The pinned native
+[full installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.10/install-nuvo-depth.sh)
+or [minimal installer](https://github.com/arputhamips/nuvo-depth/releases/download/v0.1.1-beta.10/install-nuvo-depth-minimal.sh)
 upgrades the corresponding installed profile; keep that profile and existing
 per-unit calibration.
 
@@ -59,12 +59,13 @@ healthy storage. Missing counters mean unavailable evidence, not a clean bill
 of health. Do not apply SD clock, voltage, network or kernel workarounds to every
 installation based on one device's symptoms.
 
-Native's current source adds `platform.storage` diagnostics and a small
+Native beta 10 includes `platform.storage` diagnostics and a small
 `depthd-config` utility for startup checks, using the existing canonical parser
-without loading the capture/image-processing libraries. These changes are not
-included in published beta 9 packages or the ROS Docker image. Install coherent
-native packages when a new native release is available; the ROS container does
-not provision the SD controller or own trigger startup.
+without loading the capture/image-processing libraries. Trigger preparation
+bounds each configuration child to five seconds and reports its startup stage.
+Install coherent native beta 10 packages for these changes; they belong to the
+native host rather than the ROS image. The ROS container does not provision the
+SD controller or own trigger startup.
 
 On the affected test Pi, SD high-speed compatibility mode corrected the observed
 stalls: two normal reboots took 53.3 and 52.6 seconds with zero native retries

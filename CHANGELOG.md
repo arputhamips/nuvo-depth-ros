@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.1.4 — 2026-11-02
+
+- Publish refreshed Jazzy AMD64/ARM64 images, fixed bootstrap and Compose
+  defaults containing the documented October 28 startup investigation and live
+  ROS retest. The ROS acquisition, conversion and vendored SDK are unchanged
+  from v0.1.3.
+- Recommend native `v0.1.1-beta.10` for its lightweight startup configuration
+  helper, bounded trigger configuration checks and read-only MMC diagnostics.
+  Native beta 9 remains compatible with ROS output and calibration controls.
+  SD compatibility settings remain an optional native investigation, never an
+  automatic ROS installer change.
+- Preserve existing calibration, user parameters, numeric native group
+  discovery, lazy optional XYZ and the automatic DDS receive-limit minimum.
+  Release notes distinguish new artifact checks from earlier bounded Pi tests;
+  hosted tests do not establish hardware qualification.
+
 ## 0.1.3 — 2026-10-28
 
 - Prepare the same-Pi host for DDS image delivery by raising only

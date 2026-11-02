@@ -1,7 +1,7 @@
 # Startup controls for robot prototyping
 
-These controls are included in ROS **v0.1.3** / `jazzy-0.1.3` and native
-**v0.1.1-beta.9**. The native minimal and full packages share the camera pipeline
+These controls are included in ROS **v0.1.4** / `jazzy-0.1.4` and native
+**v0.1.1-beta.10**. The native minimal and full packages share the camera pipeline
 and local control implementation. Native beta 8 lacks calibration control and
 retains its [geometry-override requirement](reference.md#beta-8-and-older-recordings).
 
@@ -18,7 +18,7 @@ Docker Engine/Compose must be installed on the host.
 Use the [no-build bootstrap](../README.md#quick-start) on the Pi:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/arputhamips/nuvo-depth-ros/v0.1.3/install-nuvo-depth-ros.sh \
+curl -fsSL https://github.com/arputhamips/nuvo-depth-ros/releases/download/v0.1.4/install-nuvo-depth-ros.sh \
   | sudo bash -s -- --outputs depth,points --cadence-hz 10
 ```
 
@@ -51,7 +51,7 @@ remains selected when no calibration argument is supplied. An intentionally
 disabled capture policy remains disabled unless native setup or an explicit
 accepted calibration import enables it.
 
-With a v0.1.3 source checkout, you can invoke the helper directly instead:
+With a v0.1.4 source checkout, you can invoke the helper directly instead:
 
 ```bash
 sudo python3 tools/run_camera.py --outputs depth,points --cadence-hz 10
@@ -63,7 +63,7 @@ support. See the [Docker guide](docker-image.md) for optional source builds.
 
 ## Launch directly in ROS
 
-In an environment with v0.1.3 installed:
+In an environment with v0.1.4 installed:
 
 ```bash
 ros2 launch nuvo_bringup camera.launch.py \
@@ -74,7 +74,7 @@ ros2 launch nuvo_bringup camera.launch.py \
 
 | Argument / ROS parameter | Meaning |
 | --- | --- |
-| `cadence_hz` | Requested delivery ceiling, 0.001–60 Hz locally; actual throughput depends on native capture/matching and selected outputs. |
+| `cadence_hz` | Requested delivery ceiling, 0.001â€“60 Hz locally; actual throughput depends on native capture/matching and selected outputs. |
 | `publish_depth` | Depth image, validity and matching CameraInfo; defaults to true. |
 | `publish_points` | Organized XYZ; conversion runs only with cloud subscribers. |
 | `publish_left_rectified`, `publish_right_rectified` | Rectified images and their CameraInfo. |
