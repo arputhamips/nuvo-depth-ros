@@ -74,7 +74,7 @@ ros2 launch nuvo_bringup camera.launch.py \
 
 | Argument / ROS parameter | Meaning |
 | --- | --- |
-| `cadence_hz` | Requested delivery ceiling, 0.001â€“60 Hz locally; actual throughput depends on native capture/matching and selected outputs. |
+| `cadence_hz` | Requested delivery ceiling, 0.001–60 Hz locally; actual throughput depends on native capture/matching and selected outputs. |
 | `publish_depth` | Depth image, validity and matching CameraInfo; defaults to true. |
 | `publish_points` | Organized XYZ; conversion runs only with cloud subscribers. |
 | `publish_left_rectified`, `publish_right_rectified` | Rectified images and their CameraInfo. |
